@@ -2,7 +2,10 @@
 
 import { create } from 'zustand'
 import { providersApi } from '../api/providers'
+import { useChatStore } from './chatStore'
+import { useSessionRuntimeStore } from './sessionRuntimeStore'
 import { useSettingsStore } from './settingsStore'
+import { OFFICIAL_DEFAULT_MODEL_ID } from '../constants/modelCatalog'
 import type {
   SavedProvider,
   CreateProviderInput,
@@ -10,41 +13,112 @@ import type {
   TestProviderConfigInput,
   ProviderTestResult,
 } from '../types/provider'
-
-// 与后端 src/server/api/models.ts 的 DEFAULT_MODEL 保持一致:
-// 切回"官方"时把聊天页的 currentModel 重置到这个,避免残留第三方 provider
-// 的 model id 在官方模型列表里找不到、ModelSelector 显示但不选中的状态。
-const OFFICIAL_DEFAULT_MODEL_ID = 'claude-opus-4-7'
+import type { ProviderPreset } from '../types/providerPreset'
+import type { RuntimeSelection } from '../types/runtime'
 
 type ProviderStore = {
   providers: SavedProvider[]
   activeId: string | null
+  hasLoadedProviders: boolean
+  presets: ProviderPreset[]
   isLoading: boolean
+  isPresetsLoading: boolean
   error: string | null
 
   fetchProviders: () => Promise<void>
+  fetchPresets: () => Promise<void>
   createProvider: (input: CreateProviderInput) => Promise<SavedProvider>
   updateProvider: (id: string, input: UpdateProviderInput) => Promise<SavedProvider>
   deleteProvider: (id: string) => Promise<void>
   activateProvider: (id: string) => Promise<void>
   activateOfficial: () => Promise<void>
-  testProvider: (id: string, overrides?: { baseUrl?: string; modelId?: string; apiFormat?: string }) => Promise<ProviderTestResult>
+  testProvider: (id: string, overrides?: { baseUrl?: string; modelId?: string; apiFormat?: string; authStrategy?: string }) => Promise<ProviderTestResult>
   testConfig: (input: TestProviderConfigInput) => Promise<ProviderTestResult>
+}
+
+function providerModelIds(provider: SavedProvider): Set<string> {
+  return new Set(
+    Object.values(provider.models)
+      .map((modelId) => modelId.trim())
+      .filter(Boolean),
+  )
+}
+
+function resolveRuntimeRefreshSelection(
+  provider: SavedProvider,
+  activeId: string | null,
+  currentSelection: RuntimeSelection | undefined,
+): RuntimeSelection | null {
+  if (currentSelection?.providerId === provider.id) {
+    const modelIds = providerModelIds(provider)
+    return {
+      providerId: provider.id,
+      modelId: modelIds.has(currentSelection.modelId)
+        ? currentSelection.modelId
+        : provider.models.main,
+    }
+  }
+
+  if (!currentSelection && activeId === provider.id) {
+    return {
+      providerId: provider.id,
+      modelId: provider.models.main,
+    }
+  }
+
+  return null
+}
+
+function refreshConnectedSessionsForProvider(provider: SavedProvider, activeId: string | null) {
+  const chatStore = useChatStore.getState()
+  const runtimeStore = useSessionRuntimeStore.getState()
+
+  for (const [sessionId, session] of Object.entries(chatStore.sessions)) {
+    if (session.connectionState !== 'connected' || session.chatState !== 'idle') {
+      continue
+    }
+
+    const selection = resolveRuntimeRefreshSelection(
+      provider,
+      activeId,
+      runtimeStore.selections[sessionId],
+    )
+    if (!selection) continue
+
+    runtimeStore.setSelection(sessionId, selection)
+    chatStore.setSessionRuntime(sessionId, selection)
+  }
 }
 
 export const useProviderStore = create<ProviderStore>((set, get) => ({
   providers: [],
   activeId: null,
+  hasLoadedProviders: false,
+  presets: [],
   isLoading: false,
+  isPresetsLoading: false,
   error: null,
 
   fetchProviders: async () => {
     set({ isLoading: true, error: null })
     try {
       const { providers, activeId } = await providersApi.list()
-      set({ providers, activeId, isLoading: false })
+      set({ providers, activeId, hasLoadedProviders: true, isLoading: false })
     } catch (err) {
-      set({ isLoading: false, error: err instanceof Error ? err.message : String(err) })
+      set({
+        isLoading: false,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  },
+
+  fetchPresets: async () => {
+    set({ isPresetsLoading: true, error: null })
+    try {
+      const { presets } = await providersApi.presets()
+      set({ presets, isPresetsLoading: false })
+    } catch (err) {
+      set({ isPresetsLoading: false, error: err instanceof Error ? err.message : String(err) })
     }
   },
 
@@ -57,6 +131,7 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   updateProvider: async (id, input) => {
     const { provider } = await providersApi.update(id, input)
     await get().fetchProviders()
+    refreshConnectedSessionsForProvider(provider, get().activeId)
     return provider
   },
 
@@ -68,10 +143,8 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   activateProvider: async (id) => {
     await providersApi.activate(id)
     await get().fetchProviders()
-    // 联动聊天页:把 currentModel 重置到新 provider 的 main model。
-    // 不这么做的话,用户在切换前手动选过的 model id (写进了 settings.json 的
-    // `model` 字段) 会继续被后端当作 explicit 返回,但新 provider 的模型列表
-    // 里没这个 id, ModelSelector 会卡在"显示旧名字 + radio 不选中"。
+    // 更新默认 provider 时，同步刷新默认 model，避免 settings.json 里残留
+    // 旧 provider 的 model id 导致默认选择指向不存在的模型。
     const provider = get().providers.find((p) => p.id === id)
     if (provider) {
       const settings = useSettingsStore.getState()
@@ -83,7 +156,7 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   activateOfficial: async () => {
     await providersApi.activateOfficial()
     await get().fetchProviders()
-    // 切回官方时同样重置 currentModel,避免残留第三方 model id。
+    // 切回官方默认时同样重置 currentModel，避免残留第三方 model id。
     const settings = useSettingsStore.getState()
     await settings.setModel(OFFICIAL_DEFAULT_MODEL_ID)
     await settings.fetchAll()

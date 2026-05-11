@@ -22,6 +22,8 @@ import {
   hasTmuxToolBeenUsed,
 } from '../tmuxSocket.js'
 import { windowsPathToPosixPath } from '../windowsPaths.js'
+import { resolveClaudeCliLauncher } from '../desktopBundledCli.js'
+import { getWslInteropEnvironmentOverrides } from './wslInterop.js'
 import type { ShellProvider } from './shellProvider.js'
 
 /**
@@ -53,6 +55,34 @@ function getDisableExtglobCommand(shellPath: string): string | null {
   }
   // Unknown shell - do nothing, we don't know the right command
   return null
+}
+
+function buildBundledClaudeShellWrapper(): string | null {
+  const launcher = resolveClaudeCliLauncher({
+    cliPath: process.env.CLAUDE_CLI_PATH,
+    execPath: process.execPath,
+  })
+
+  if (!launcher) {
+    return null
+  }
+
+  const quotedCommand = quote([launcher.command])
+  let invoke = ''
+
+  if (launcher.kind === 'script') {
+    invoke = `command bun ${quotedCommand} "$@"`
+  } else if (launcher.kind === 'sidecar') {
+    invoke = launcher.requiresAppRoot
+      ? `if [ -z "$CLAUDE_APP_ROOT" ]; then echo "bundled claude wrapper requires CLAUDE_APP_ROOT" >&2; return 1; fi; ${quotedCommand} cli --app-root "$CLAUDE_APP_ROOT" "$@"`
+      : `${quotedCommand} cli "$@"`
+  } else if (launcher.requiresAppRoot) {
+    invoke = `if [ -n "$CLAUDE_APP_ROOT" ]; then ${quotedCommand} --app-root "$CLAUDE_APP_ROOT" "$@"; else ${quotedCommand} "$@"; fi`
+  } else {
+    invoke = `${quotedCommand} "$@"`
+  }
+
+  return `claude() { ${invoke}; }`
 }
 
 export async function createBashShellProvider(
@@ -172,6 +202,11 @@ export async function createBashShellProvider(
         commandParts.push(sessionEnvScript)
       }
 
+      const bundledClaudeWrapper = buildBundledClaudeShellWrapper()
+      if (bundledClaudeWrapper) {
+        commandParts.push(bundledClaudeWrapper)
+      }
+
       // Disable extended glob patterns for security (after sourcing user config to override)
       const disableExtglobCmd = getDisableExtglobCommand(shellPath)
       if (disableExtglobCmd) {
@@ -245,6 +280,14 @@ export async function createBashShellProvider(
         // Safe to set unconditionally — non-zsh shells ignore TMPPREFIX.
         env.TMPPREFIX = posixJoin(posixTmpDir, 'zsh')
       }
+      Object.assign(
+        env,
+        getWslInteropEnvironmentOverrides({
+          platform: getPlatform(),
+          command,
+          shellPrefix: process.env.CLAUDE_CODE_SHELL_PREFIX,
+        }),
+      )
       // Apply session env vars set via /env (child processes only, not the REPL)
       for (const [key, value] of getSessionEnvVars()) {
         env[key] = value

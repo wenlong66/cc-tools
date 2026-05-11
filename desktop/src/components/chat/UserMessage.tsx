@@ -11,8 +11,11 @@ export function UserMessage({ content, attachments }: Props) {
   const hasText = content.trim().length > 0
 
   return (
-    <div className="group mb-5 flex items-end justify-end gap-1.5">
-      <div className="min-w-0 max-w-[82%] space-y-2">
+    <div className="group mb-5 flex justify-end">
+      <div
+        data-message-shell="user"
+        className="flex min-w-0 w-full max-w-[82%] flex-col items-end gap-2 sm:max-w-[78%] lg:max-w-[72%]"
+      >
         {attachments && attachments.length > 0 && (
           <AttachmentGallery attachments={attachments} variant="message" />
         )}
@@ -25,14 +28,15 @@ export function UserMessage({ content, attachments }: Props) {
             {content}
           </div>
         )}
-      </div>
 
-      {hasText && (
-        <MessageActionBar
-          copyText={content}
-          copyLabel="Copy prompt"
-        />
-      )}
+        {hasText && (
+          <MessageActionBar
+            copyText={content}
+            copyLabel="Copy prompt"
+            align="end"
+          />
+        )}
+      </div>
     </div>
   )
 }
