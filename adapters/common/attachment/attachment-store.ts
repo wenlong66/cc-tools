@@ -29,7 +29,8 @@ const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000
 const DEFAULT_ORPHAN_GRACE_MS = 10 * 60 * 1000
 
 function defaultRoot(): string {
-  return path.join(os.homedir(), '.claude', 'im-downloads')
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+  return path.join(configDir, 'im-downloads')
 }
 
 /** Strip path separators / .. / control chars from a filename. */
