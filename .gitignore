@@ -27,8 +27,9 @@ e2e-*.png
 artifacts/quality-runs/
 artifacts/coverage/
 
-# Desktop build output
+# Desktop/Web build output
 desktop/dist/
+web/dist/
 desktop/build-artifacts/
 desktop/src-tauri/binaries/
 desktop/src-tauri/target/
