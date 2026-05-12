@@ -1,7 +1,7 @@
 /**
  * TaskService — CLI Task V2 的读取与查询
  *
- * 任务信息存储在 ~/.claude/tasks/<task_list_id>/ 目录下，每个任务一个 JSON 文件。
+ * 任务信息存储在 ~/.cc-tools/tasks/<task_list_id>/ 目录下，每个任务一个 JSON 文件。
  * Task list ID 可以是 session ID、team name 等。
  */
 

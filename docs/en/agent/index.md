@@ -123,7 +123,7 @@ All diagrams use a dark background (#1a1a2e) with Anthropic brand copper-orange 
 
 - [CC-Tools Home](/)
 - [Memory System Documentation](/en/memory/01-usage-guide)
-- [Agent Tool Source Code](https://github.com/NanmiCoder/cc-haha/tree/main/src/tools/AgentTool/)
-- [Swarm Infrastructure](https://github.com/NanmiCoder/cc-haha/tree/main/src/utils/swarm/)
-- [Task Management System](https://github.com/NanmiCoder/cc-haha/tree/main/src/tasks/)
-- [GitHub Issues](https://github.com/NanmiCoder/cc-haha/issues)
+- [Agent Tool Source Code](https://github.com/wenlong66/cc-tools/tree/main/src/tools/AgentTool/)
+- [Swarm Infrastructure](https://github.com/wenlong66/cc-tools/tree/main/src/utils/swarm/)
+- [Task Management System](https://github.com/wenlong66/cc-tools/tree/main/src/tasks/)
+- [GitHub Issues](https://github.com/wenlong66/cc-tools/issues)

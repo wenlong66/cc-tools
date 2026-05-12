@@ -156,7 +156,7 @@ cc-tools --no-computer-use
 CLAUDE_COMPUTER_USE_ENABLED=0 cc-tools
 ```
 
-You can also write the global config file at `~/.claude/cc-haha/computer-use-config.json`:
+You can also write the global config file at `~/.cc-tools/cc-tools/computer-use-config.json`:
 
 ```json
 {

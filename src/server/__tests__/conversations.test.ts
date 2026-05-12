@@ -1263,7 +1263,7 @@ describe('WebSocket Chat Integration', () => {
   })
 
   it('should keep a long desktop session alive in a /tmp project across engineering turns', async () => {
-    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-haha-issue247-project-'))
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-tools-issue247-project-'))
     let sessionId: string | undefined
 
     try {

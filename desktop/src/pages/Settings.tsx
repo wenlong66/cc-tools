@@ -841,7 +841,7 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
     const parsedModelContextWindows = buildModelContextWindows(models, modelContextInputs)
     setIsSubmitting(true)
     try {
-      // Write the edited cc-haha settings.json first so provider-specific model
+      // Write the edited cc-tools settings.json first so provider-specific model
       // settings never conflict with the user's global ~/.cc-tools/settings.json.
       if (settingsJson.trim()) {
         try {
@@ -2562,10 +2562,10 @@ function PluginSettings() {
 
 // ─── About Settings ──────────────────────────────────────
 
-const GITHUB_REPO = 'https://github.com/NanmiCoder/cc-haha'
+const GITHUB_REPO = 'https://github.com/wenlong66/cc-tools'
 const GITHUB_ISSUES = `${GITHUB_REPO}/issues`
 const GITHUB_RELEASES = `${GITHUB_REPO}/releases`
-const AUTHOR_GITHUB = 'https://github.com/NanmiCoder'
+const AUTHOR_GITHUB = 'https://github.com/wenlong66'
 const SOCIAL_LINKS = [
   { name: 'Bilibili', icon: '/icons/bilibili.svg', url: 'https://space.bilibili.com/434377496', label: '程序员阿江-Relakkes' },
   { name: 'Douyin', icon: '/icons/douyin.svg', url: 'https://www.douyin.com/user/MS4wLjABAAAATJPY7LAlaa5X-c8uNdWkvz0jUGgpw4eeXIwu_8BhvqE', label: '程序员阿江-Relakkes' },
@@ -2667,7 +2667,7 @@ function AboutSettings() {
         >
           <img src="/icons/github.svg" alt="GitHub" className="w-5 h-5 opacity-70" />
           <div className="flex-1 text-left">
-            <div className="text-sm font-medium text-[var(--color-text-primary)]">NanmiCoder/cc-haha</div>
+            <div className="text-sm font-medium text-[var(--color-text-primary)]">NanmiCoder/cc-tools</div>
             <div className="text-xs text-[var(--color-text-tertiary)]">{t('settings.about.starHint')}</div>
           </div>
         </button>

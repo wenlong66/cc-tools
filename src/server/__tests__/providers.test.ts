@@ -67,13 +67,13 @@ function sampleInput(overrides?: Partial<CreateProviderInput>): CreateProviderIn
 
 /** Read the settings.json written to the temp config dir */
 async function readSettings(): Promise<Record<string, unknown>> {
-  const raw = await fs.readFile(path.join(tmpDir, 'cc-haha', 'settings.json'), 'utf-8')
+  const raw = await fs.readFile(path.join(tmpDir, 'cc-tools', 'settings.json'), 'utf-8')
   return JSON.parse(raw) as Record<string, unknown>
 }
 
 /** Read the providers.json written to the temp config dir */
 async function readProvidersConfig(): Promise<Record<string, unknown>> {
-  const raw = await fs.readFile(path.join(tmpDir, 'cc-haha', 'providers.json'), 'utf-8')
+  const raw = await fs.readFile(path.join(tmpDir, 'cc-tools', 'providers.json'), 'utf-8')
   return JSON.parse(raw) as Record<string, unknown>
 }
 
@@ -95,25 +95,25 @@ describe('ProviderService', () => {
     })
 
     test('should recover from a malformed providers index after an upgrade', async () => {
-      await fs.mkdir(path.join(tmpDir, 'cc-haha'), { recursive: true })
-      await fs.writeFile(path.join(tmpDir, 'cc-haha', 'providers.json'), '{not json', 'utf-8')
+      await fs.mkdir(path.join(tmpDir, 'cc-tools'), { recursive: true })
+      await fs.writeFile(path.join(tmpDir, 'cc-tools', 'providers.json'), '{not json', 'utf-8')
 
       const svc = new ProviderService()
       const result = await svc.listProviders()
-      const files = await fs.readdir(path.join(tmpDir, 'cc-haha'))
+      const files = await fs.readdir(path.join(tmpDir, 'cc-tools'))
 
       expect(result).toEqual({ providers: [], activeId: null })
       expect(files.some((name) => name.startsWith('providers.json.invalid-'))).toBe(true)
     })
 
     test('should normalize a legacy activeProviderId field', async () => {
-      await fs.mkdir(path.join(tmpDir, 'cc-haha'), { recursive: true })
+      await fs.mkdir(path.join(tmpDir, 'cc-tools'), { recursive: true })
       const provider = {
         id: 'legacy-provider',
         ...sampleInput({ name: 'Legacy Provider' }),
       }
       await fs.writeFile(
-        path.join(tmpDir, 'cc-haha', 'providers.json'),
+        path.join(tmpDir, 'cc-tools', 'providers.json'),
         JSON.stringify({ activeProviderId: provider.id, providers: [provider] }),
         'utf-8',
       )
@@ -166,7 +166,7 @@ describe('ProviderService', () => {
       const svc = new ProviderService()
       await svc.addProvider(sampleInput())
 
-      await expect(fs.readFile(path.join(tmpDir, 'cc-haha', 'settings.json'), 'utf-8')).rejects.toThrow()
+      await expect(fs.readFile(path.join(tmpDir, 'cc-tools', 'settings.json'), 'utf-8')).rejects.toThrow()
     })
 
     test('custom providers declare thinking and effort capability passthrough for user-defined models', async () => {
@@ -564,7 +564,7 @@ describe('ProviderService', () => {
 
       expect(status).toEqual({
         hasAuth: true,
-        source: 'cc-haha-provider',
+        source: 'cc-tools-provider',
         activeProvider: provider.name,
       })
     })
@@ -581,7 +581,7 @@ describe('ProviderService', () => {
 
       expect(status).toEqual({
         hasAuth: true,
-        source: 'cc-haha-provider',
+        source: 'cc-tools-provider',
         activeProvider: provider.name,
       })
     })
@@ -605,9 +605,9 @@ describe('ProviderService', () => {
 
     test('should preserve existing settings.json fields on activation', async () => {
       // Pre-seed settings with an extra field
-      await fs.mkdir(path.join(tmpDir, 'cc-haha'), { recursive: true })
+      await fs.mkdir(path.join(tmpDir, 'cc-tools'), { recursive: true })
       await fs.writeFile(
-        path.join(tmpDir, 'cc-haha', 'settings.json'),
+        path.join(tmpDir, 'cc-tools', 'settings.json'),
         JSON.stringify({ theme: 'dark', env: { CUSTOM_VAR: 'keep-me' } }),
       )
 
@@ -625,8 +625,8 @@ describe('ProviderService', () => {
     })
 
     test('should recover malformed managed settings before activation sync', async () => {
-      await fs.mkdir(path.join(tmpDir, 'cc-haha'), { recursive: true })
-      await fs.writeFile(path.join(tmpDir, 'cc-haha', 'settings.json'), '{not json', 'utf-8')
+      await fs.mkdir(path.join(tmpDir, 'cc-tools'), { recursive: true })
+      await fs.writeFile(path.join(tmpDir, 'cc-tools', 'settings.json'), '{not json', 'utf-8')
 
       const svc = new ProviderService()
       const provider = await svc.addProvider(sampleInput())
@@ -635,7 +635,7 @@ describe('ProviderService', () => {
 
       const settings = await readSettings()
       const env = settings.env as Record<string, string>
-      const files = await fs.readdir(path.join(tmpDir, 'cc-haha'))
+      const files = await fs.readdir(path.join(tmpDir, 'cc-tools'))
 
       expect(env.ANTHROPIC_BASE_URL).toBe('https://api.example.com')
       expect(files.some((name) => name.startsWith('settings.json.invalid-'))).toBe(true)

@@ -271,7 +271,7 @@ function executeInBackground({
  * Checks if a hook should be skipped due to lack of workspace trust.
  *
  * ALL hooks require workspace trust because they execute arbitrary commands from
- * .claude/settings.json. This is a defense-in-depth security measure.
+ * .cc-tools/settings.json. This is a defense-in-depth security measure.
  *
  * Context: Hooks are captured via captureHooksConfigSnapshot() before the trust
  * dialog is shown. While most hooks won't execute until after trust is established
@@ -4339,7 +4339,7 @@ export function hasInstructionsLoadedHook(): boolean {
 
 /**
  * Execute InstructionsLoaded hooks when an instruction file (CLAUDE.md or
- * .claude/rules/*.md) is loaded into context. Fire-and-forget — this hook is
+ * .cc-tools/rules/*.md) is loaded into context. Fire-and-forget — this hook is
  * for observability/audit only and does not support blocking.
  *
  * Dispatch sites:

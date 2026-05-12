@@ -292,15 +292,15 @@ export async function executeDesktopSmoke(
       timeoutMs: 30_000,
     })
     const browserSetup = [
-      `localStorage.setItem('cc-haha-open-tabs', ${JSON.stringify(JSON.stringify({
+      `localStorage.setItem('cc-tools-open-tabs', ${JSON.stringify(JSON.stringify({
         openTabs: [{ sessionId: session.sessionId, title: 'Desktop Smoke', type: 'session' }],
         activeTabId: session.sessionId,
       }))})`,
       runtimeSelection
-        ? `localStorage.setItem('cc-haha-session-runtime', ${JSON.stringify(JSON.stringify({
+        ? `localStorage.setItem('cc-tools-session-runtime', ${JSON.stringify(JSON.stringify({
           [session.sessionId]: runtimeSelection,
         }))})`
-        : `localStorage.removeItem('cc-haha-session-runtime')`,
+        : `localStorage.removeItem('cc-tools-session-runtime')`,
     ]
     await runLoggedCommand([
       'agent-browser',

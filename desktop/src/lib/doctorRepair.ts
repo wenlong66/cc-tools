@@ -2,10 +2,10 @@ import { doctorApi, type DoctorReportRepairResponse } from '../api/doctor'
 import { DESKTOP_PERSISTENCE_VERSION_KEY } from './persistenceMigrations'
 
 export const SAFE_DOCTOR_STORAGE_KEYS = [
-  'cc-haha-open-tabs',
-  'cc-haha-session-runtime',
-  'cc-haha-theme',
-  'cc-haha-locale',
+  'cc-tools-open-tabs',
+  'cc-tools-session-runtime',
+  'cc-tools-theme',
+  'cc-tools-locale',
   DESKTOP_PERSISTENCE_VERSION_KEY,
 ] as const
 

@@ -14,7 +14,7 @@ hero:
       link: /en/guide/quick-start
     - theme: alt
       text: GitHub
-      link: https://github.com/NanmiCoder/cc-haha
+      link: https://github.com/wenlong66/cc-tools
 
 features:
   - icon: "\U0001F5A5"

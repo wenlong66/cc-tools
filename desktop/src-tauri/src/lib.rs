@@ -319,7 +319,7 @@ fn get_server_url(state: State<'_, ServerState>) -> Result<String, String> {
 /// 流程：
 ///   1. kill 当前 adapter 子进程（如果在跑）
 ///   2. spawn 新的 adapter 子进程
-///   3. 新 sidecar 内部的 loadConfig() 会读到最新的 ~/.claude/adapters.json
+///   3. 新 sidecar 内部的 loadConfig() 会读到最新的 ~/.cc-tools/adapters.json
 ///      并重新建立 WebSocket 连接到飞书 / Telegram
 ///
 /// 凭据缺失时 sidecar 自己会 warn + skip + 退出，所以这里不需要前置检查。

@@ -400,7 +400,7 @@ agentDefinition.model               ← Agent definition
 ### TeamFile Structure
 
 ```typescript
-// Storage path: ~/.claude/teams/{team_name}/config.json
+// Storage path: ~/.cc-tools/teams/{team_name}/config.json
 {
   name: string                        // Team name
   description?: string                // Team description
@@ -434,7 +434,7 @@ agentDefinition.model               ← Agent definition
 
 ![Teams Mailbox System](./images/09-teams-mailbox.png)
 
-**Storage path**: `~/.claude/teams/{team_name}/inboxes/{agent_name}.json`
+**Storage path**: `~/.cc-tools/teams/{team_name}/inboxes/{agent_name}.json`
 
 ```typescript
 // src/utils/teammateMailbox.ts
@@ -607,7 +607,7 @@ function enqueuePendingNotification(taskId, result) {
 
 ### Output Management
 
-**Storage path**: `~/.claude/temp/{sessionId}/tasks/{taskId}.output`
+**Storage path**: `~/.cc-tools/temp/{sessionId}/tasks/{taskId}.output`
 
 | Parameter | Value |
 |-----------|-------|

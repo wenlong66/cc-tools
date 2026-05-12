@@ -107,7 +107,7 @@ describe('detectPythonRuntime', () => {
   })
 
   test('falls back to venv python when system python is not discoverable', async () => {
-    const venvPython = 'C:\\Users\\Relakkes\\.claude\\.runtime\\venv\\Scripts\\python.exe'
+    const venvPython = 'C:\\Users\\Relakkes\\.cc-tools\\.runtime\\venv\\Scripts\\python.exe'
     const result = await detectPythonRuntime(
       'win32',
       async (cmd, args) => {

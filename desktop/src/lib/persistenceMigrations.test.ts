@@ -11,7 +11,7 @@ describe('desktop persistence migrations', () => {
   })
 
   test('migrates legacy open-tab arrays into the current tab persistence shape', () => {
-    window.localStorage.setItem('cc-haha-open-tabs', JSON.stringify([
+    window.localStorage.setItem('cc-tools-open-tabs', JSON.stringify([
       { sessionId: 'session-1', title: 'Old tab' },
       { sessionId: '__terminal__legacy', title: 'Terminal 1', type: 'terminal' },
       { sessionId: 123, title: 'bad' },
@@ -19,8 +19,8 @@ describe('desktop persistence migrations', () => {
 
     const report = runDesktopPersistenceMigrations()
 
-    expect(report.migratedKeys).toContain('cc-haha-open-tabs')
-    expect(JSON.parse(window.localStorage.getItem('cc-haha-open-tabs') || '{}')).toEqual({
+    expect(report.migratedKeys).toContain('cc-tools-open-tabs')
+    expect(JSON.parse(window.localStorage.getItem('cc-tools-open-tabs') || '{}')).toEqual({
       openTabs: [{ sessionId: 'session-1', title: 'Old tab', type: 'session' }],
       activeTabId: 'session-1',
     })
@@ -29,7 +29,7 @@ describe('desktop persistence migrations', () => {
 
   test('filters stale session runtime selections without clearing unrelated keys', () => {
     window.localStorage.setItem('unrelated-user-key', 'keep')
-    window.localStorage.setItem('cc-haha-session-runtime', JSON.stringify({
+    window.localStorage.setItem('cc-tools-session-runtime', JSON.stringify({
       good: { providerId: null, modelId: 'claude-sonnet' },
       alsoGood: { providerId: 'provider-1', modelId: 'gpt-5.4' },
       bad: { providerId: 'provider-2' },
@@ -37,7 +37,7 @@ describe('desktop persistence migrations', () => {
 
     runDesktopPersistenceMigrations()
 
-    expect(JSON.parse(window.localStorage.getItem('cc-haha-session-runtime') || '{}')).toEqual({
+    expect(JSON.parse(window.localStorage.getItem('cc-tools-session-runtime') || '{}')).toEqual({
       alsoGood: { providerId: 'provider-1', modelId: 'gpt-5.4' },
       good: { providerId: null, modelId: 'claude-sonnet' },
     })
@@ -45,15 +45,15 @@ describe('desktop persistence migrations', () => {
   })
 
   test('removes malformed known keys without throwing during startup', () => {
-    window.localStorage.setItem('cc-haha-open-tabs', '{"openTabs":')
-    window.localStorage.setItem('cc-haha-theme', 'sepia')
+    window.localStorage.setItem('cc-tools-open-tabs', '{"openTabs":')
+    window.localStorage.setItem('cc-tools-theme', 'sepia')
 
     const report = runDesktopPersistenceMigrations()
 
-    expect(report.migratedKeys).toContain('cc-haha-open-tabs')
-    expect(report.migratedKeys).toContain('cc-haha-theme')
-    expect(window.localStorage.getItem('cc-haha-open-tabs')).toBeNull()
-    expect(window.localStorage.getItem('cc-haha-theme')).toBeNull()
+    expect(report.migratedKeys).toContain('cc-tools-open-tabs')
+    expect(report.migratedKeys).toContain('cc-tools-theme')
+    expect(window.localStorage.getItem('cc-tools-open-tabs')).toBeNull()
+    expect(window.localStorage.getItem('cc-tools-theme')).toBeNull()
   })
 
   test('does not throw if schema version persistence is blocked', () => {
@@ -88,10 +88,10 @@ describe('desktop persistence migrations', () => {
     const report = runDesktopPersistenceMigrations(storage)
 
     expect(report.migratedKeys).toEqual(expect.arrayContaining([
-      'cc-haha-open-tabs',
-      'cc-haha-session-runtime',
-      'cc-haha-theme',
-      'cc-haha-locale',
+      'cc-tools-open-tabs',
+      'cc-tools-session-runtime',
+      'cc-tools-theme',
+      'cc-tools-locale',
       DESKTOP_PERSISTENCE_VERSION_KEY,
     ]))
   })

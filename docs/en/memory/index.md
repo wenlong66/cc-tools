@@ -114,8 +114,8 @@ All illustrations use a dark background (#1a1a2e) + Anthropic brand copper-orang
 ## Related Resources
 
 - [CC-Tools Home](/en/)
-- [Memory system source code](https://github.com/NanmiCoder/cc-haha/tree/main/src/memdir/)
-- [Auto-extraction service](https://github.com/NanmiCoder/cc-haha/tree/main/src/services/extractMemories/)
-- [AutoDream service](https://github.com/NanmiCoder/cc-haha/tree/main/src/services/autoDream/)
-- [DreamTask](https://github.com/NanmiCoder/cc-haha/tree/main/src/tasks/DreamTask/)
-- [GitHub Issues](https://github.com/NanmiCoder/cc-haha/issues)
+- [Memory system source code](https://github.com/wenlong66/cc-tools/tree/main/src/memdir/)
+- [Auto-extraction service](https://github.com/wenlong66/cc-tools/tree/main/src/services/extractMemories/)
+- [AutoDream service](https://github.com/wenlong66/cc-tools/tree/main/src/services/autoDream/)
+- [DreamTask](https://github.com/wenlong66/cc-tools/tree/main/src/tasks/DreamTask/)
+- [GitHub Issues](https://github.com/wenlong66/cc-tools/issues)

@@ -11,8 +11,8 @@ fi
 API_URL="${API_URL:-http://127.0.0.1:3457}"
 WEB_URL="${WEB_URL:-http://127.0.0.1:5175/?serverUrl=http://127.0.0.1:3457}"
 RUN_ID="$(date +%s)-$RANDOM"
-SESSION_NAME="cc-haha-webui-e2e-${RUN_ID}"
-ARTIFACT_DIR="$(mktemp -d "/tmp/cc-haha-webui-e2e-${RUN_ID}-XXXX")"
+SESSION_NAME="cc-tools-webui-e2e-${RUN_ID}"
+ARTIFACT_DIR="$(mktemp -d "/tmp/cc-tools-webui-e2e-${RUN_ID}-XXXX")"
 AB=(agent-browser --session "${SESSION_NAME}")
 
 cleanup() {

@@ -194,11 +194,11 @@ CLAUDE.md is the custom instruction system, loaded by **priority from low to hig
 ```
 /etc/claude-code/CLAUDE.md          ← Global managed config (lowest priority)
   ↓
-~/.claude/CLAUDE.md                 ← User-level global instructions
+~/.cc-tools/CLAUDE.md                 ← User-level global instructions
   ↓
 project-root/CLAUDE.md              ← Project-level instructions
-project-root/.claude/CLAUDE.md
-project-root/.claude/rules/*.md
+project-root/.cc-tools/CLAUDE.md
+project-root/.cc-tools/rules/*.md
   ↓
 project-root/CLAUDE.local.md        ← Local private instructions (highest priority)
 ```
@@ -404,9 +404,9 @@ Bundled skills (bundled)          ← Compiled into CLI, 15+
   ↓
 Plugin skills (plugin)            ← Plugin-registered
   ↓
-User skills (~/.claude/skills/)   ← User-global
+User skills (~/.cc-tools/skills/)   ← User-global
   ↓
-Project skills (.claude/skills/)  ← Project-level
+Project skills (.cc-tools/skills/)  ← Project-level
   ↓
 Policy skills (policy)            ← Organization-managed
 ```

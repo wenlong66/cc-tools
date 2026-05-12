@@ -14,7 +14,7 @@ let originalH5PublicBaseUrl: string | undefined
 let originalH5AutoPublicUrl: string | undefined
 
 function getManagedSettingsPath(): string {
-  return path.join(tmpDir, 'cc-haha', 'settings.json')
+  return path.join(tmpDir, 'cc-tools', 'settings.json')
 }
 
 beforeEach(async () => {

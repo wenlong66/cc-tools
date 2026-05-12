@@ -37,7 +37,7 @@ If `cc-tools` runs on Windows / Git Bash but tools such as Node, Python, uv, or 
 wsl -e bash -lc 'node --version && python3 --version'
 ```
 
-When cc-haha detects `wsl` / `wsl.exe`, it automatically sets `MSYS2_ARG_CONV_EXCL=*` so Git Bash does not rewrite WSL paths such as `/home/...` into `C:/Program Files/Git/home/...`.
+When cc-tools detects `wsl` / `wsl.exe`, it automatically sets `MSYS2_ARG_CONV_EXCL=*` so Git Bash does not rewrite WSL paths such as `/home/...` into `C:/Program Files/Git/home/...`.
 
 To route Bash tool commands through WSL by default, set this before startup:
 

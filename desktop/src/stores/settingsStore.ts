@@ -7,7 +7,7 @@ import type { H5AccessSettings, PermissionMode, EffortLevel, ModelInfo, ThemeMod
 import type { Locale } from '../i18n'
 import { useUIStore } from './uiStore'
 
-const LOCALE_STORAGE_KEY = 'cc-haha-locale'
+const LOCALE_STORAGE_KEY = 'cc-tools-locale'
 let desktopNotificationsSaveQueue: Promise<void> = Promise.resolve()
 
 function getStoredLocale(): Locale {

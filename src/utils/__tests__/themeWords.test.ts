@@ -17,7 +17,7 @@ describe('theme utilities', () => {
       expect(theme.inverseText).toBeTruthy()
       expect(theme.success).toBeTruthy()
       expect(theme.error).toBeTruthy()
-      expect(theme.claude).toBeTruthy()
+      expect(theme.cc-tools).toBeTruthy()
     }
   })
 

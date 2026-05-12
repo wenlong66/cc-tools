@@ -183,8 +183,8 @@ build_canonical_dmg() {
   local staging_dir
   local rw_dmg
 
-  staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/cc-haha-dmg.XXXXXX")"
-  rw_dmg="$(mktemp "${TMPDIR:-/tmp}/cc-haha-rw.XXXXXX").dmg"
+  staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/cc-tools-dmg.XXXXXX")"
+  rw_dmg="$(mktemp "${TMPDIR:-/tmp}/cc-tools-rw.XXXXXX").dmg"
 
   cp -R "${app_bundle}" "${staging_dir}/"
   ln -s /Applications "${staging_dir}/Applications"

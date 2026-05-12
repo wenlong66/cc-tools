@@ -473,7 +473,7 @@ export class ProviderService {
       return { hasAuth: true, source: 'env' }
     }
 
-    // 3. Check original ~/.claude/settings.json
+    // 3. Check original ~/.cc-tools/settings.json
     try {
       const originalPath = path.join(this.getConfigDir(), 'settings.json')
       const raw = await fs.readFile(originalPath, 'utf-8')

@@ -2,7 +2,7 @@ import { normalizeNameForMCP } from '../../services/mcp/normalization.js'
 import { env } from '../env.js'
 
 export const COMPUTER_USE_MCP_SERVER_NAME = 'computer-use'
-export const CLI_HOST_PLATFORM_BUNDLE_ID = 'com.anthropic.claude-code.cli-no-window'
+export const CLI_HOST_PLATFORM_BUNDLE_ID = 'com.anthropic.cc-tools-code.cli-no-window'
 
 export function isComputerUseSupportedPlatform(
   platform: NodeJS.Platform = process.platform,

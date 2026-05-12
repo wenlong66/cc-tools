@@ -846,8 +846,8 @@ export function hasAccessToIDEExtensionDiffFeature(
 
 const EXTENSION_ID =
   process.env.USER_TYPE === 'ant'
-    ? 'anthropic.claude-code-internal'
-    : 'anthropic.claude-code'
+    ? 'anthropic.cc-tools-code-internal'
+    : 'anthropic.cc-tools-code'
 
 export async function isIDEExtensionInstalled(
   ideType: IdeType,
@@ -891,7 +891,7 @@ async function installIDEExtension(ideType: IdeType): Promise<string | null> {
         await sleep(500)
         const result = await execFileNoThrowWithCwd(
           command,
-          ['--force', '--install-extension', 'anthropic.claude-code'],
+          ['--force', '--install-extension', 'anthropic.cc-tools-code'],
           {
             env: getInstallationEnv(),
           },
@@ -941,7 +941,7 @@ async function getInstalledVSCodeExtensionVersion(
   const lines = stdout?.split('\n') || []
   for (const line of lines) {
     const [extensionId, version] = line.split('@')
-    if (extensionId === 'anthropic.claude-code' && version) {
+    if (extensionId === 'anthropic.cc-tools-code' && version) {
       return version
     }
   }

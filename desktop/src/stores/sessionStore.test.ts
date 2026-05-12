@@ -57,7 +57,7 @@ describe('sessionStore', () => {
     listMock.mockImplementation(() => new Promise(() => {}))
 
     const result = await Promise.race([
-      useSessionStore.getState().createSession('D:/workspace/code/myself_code/cc-haha'),
+      useSessionStore.getState().createSession('D:/workspace/code/myself_code/cc-tools'),
       delay(100).then(() => 'timed-out'),
     ])
 
@@ -66,11 +66,11 @@ describe('sessionStore', () => {
     expect(useSessionStore.getState().sessions[0]).toMatchObject({
       id: 'session-optimistic-1',
       title: 'New Session',
-      workDir: 'D:/workspace/code/myself_code/cc-haha',
+      workDir: 'D:/workspace/code/myself_code/cc-tools',
       workDirExists: true,
     })
     expect(createMock).toHaveBeenCalledWith({
-      workDir: 'D:/workspace/code/myself_code/cc-haha',
+      workDir: 'D:/workspace/code/myself_code/cc-tools',
     })
     expect(listMock).toHaveBeenCalledOnce()
   })

@@ -700,7 +700,7 @@ type RecentProjectEntry = {
 // In-memory cache for recent projects (TTL: 30s)
 let recentProjectsCache: { projects: RecentProjectEntry[]; timestamp: number } | null = null
 const RECENT_PROJECTS_CACHE_TTL = 30_000
-const DESKTOP_WORKTREE_MARKER = '/.claude/worktrees/'
+const DESKTOP_WORKTREE_MARKER = '/.cc-tools/worktrees/'
 
 function projectNameForRecentPath(realPath: string, fallback: string): string {
   const displayRoot = realPath.includes(DESKTOP_WORKTREE_MARKER)

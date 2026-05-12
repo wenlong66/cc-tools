@@ -21,7 +21,7 @@ async function listFiles(dir: string) {
 
 describe('persistent storage upgrade migrations', () => {
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-haha-persistence-'))
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-tools-persistence-'))
     process.env.CLAUDE_CONFIG_DIR = tempDir
     resetPersistentStorageMigrationsForTests()
   })
@@ -33,7 +33,7 @@ describe('persistent storage upgrade migrations', () => {
   })
 
   test('migrates legacy providers index and writes a backup before changing it', async () => {
-    const ccHahaDir = path.join(tempDir, 'cc-haha')
+    const ccHahaDir = path.join(tempDir, 'cc-tools')
     await fs.mkdir(ccHahaDir, { recursive: true })
     await fs.writeFile(
       path.join(ccHahaDir, 'providers.json'),
@@ -56,7 +56,7 @@ describe('persistent storage upgrade migrations', () => {
     const report = await ensurePersistentStorageUpgraded()
 
     expect(report.failures).toEqual([])
-    expect(report.migratedEntries).toContain('cc-haha/providers.json')
+    expect(report.migratedEntries).toContain('cc-tools/providers.json')
 
     const migrated = JSON.parse(await fs.readFile(path.join(ccHahaDir, 'providers.json'), 'utf-8')) as {
       schemaVersion?: number
@@ -107,14 +107,14 @@ describe('persistent storage upgrade migrations', () => {
   })
 
   test('quarantines malformed managed settings instead of blocking startup', async () => {
-    const ccHahaDir = path.join(tempDir, 'cc-haha')
+    const ccHahaDir = path.join(tempDir, 'cc-tools')
     await fs.mkdir(ccHahaDir, { recursive: true })
     await fs.writeFile(path.join(ccHahaDir, 'settings.json'), '{"env":', 'utf-8')
 
     const report = await ensurePersistentStorageUpgraded()
 
     expect(report.failures).toEqual([])
-    expect(report.migratedEntries).toContain('cc-haha/settings.json')
+    expect(report.migratedEntries).toContain('cc-tools/settings.json')
     expect(JSON.parse(await fs.readFile(path.join(ccHahaDir, 'settings.json'), 'utf-8'))).toEqual({})
     const quarantined = (await listFiles(ccHahaDir)).filter((file) => file.startsWith('settings.json.invalid-'))
     expect(quarantined.length).toBe(1)

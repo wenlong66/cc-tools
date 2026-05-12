@@ -37,7 +37,7 @@ export PATH="$HOME/path/to/cc-tools/bin:$PATH"
 wsl -e bash -lc 'node --version && python3 --version'
 ```
 
-cc-haha 会在检测到 `wsl` / `wsl.exe` 调用时自动设置 `MSYS2_ARG_CONV_EXCL=*`，避免 Git Bash 把 `/home/...` 这类 WSL 路径错误转换成 `C:/Program Files/Git/home/...`。
+cc-tools 会在检测到 `wsl` / `wsl.exe` 调用时自动设置 `MSYS2_ARG_CONV_EXCL=*`，避免 Git Bash 把 `/home/...` 这类 WSL 路径错误转换成 `C:/Program Files/Git/home/...`。
 
 如果你想让 Bash 工具默认进入 WSL，可以在启动前设置：
 

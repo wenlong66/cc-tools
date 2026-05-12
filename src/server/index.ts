@@ -321,7 +321,7 @@ export function startServer(port = PORT, host = HOST) {
     websocket: handleWebSocket,
   })
 
-  // Start watching ~/.claude/teams/ for real-time WebSocket push
+  // Start watching ~/.cc-tools/teams/ for real-time WebSocket push
   teamWatcher.start()
 
   // Start the cron scheduler to execute scheduled tasks

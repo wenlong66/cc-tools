@@ -112,7 +112,7 @@ async function runAdapters(rawArgs: string[]): Promise<void> {
   if (enableFeishu) {
     if (!config.feishu.appId || !config.feishu.appSecret) {
       console.warn(
-        '[claude-sidecar] --feishu requested but FEISHU_APP_ID / FEISHU_APP_SECRET missing in env or ~/.claude/adapters.json — skipping',
+        '[claude-sidecar] --feishu requested but FEISHU_APP_ID / FEISHU_APP_SECRET missing in env or ~/.cc-tools/adapters.json — skipping',
       )
     } else {
       console.log('[claude-sidecar] starting Feishu adapter')
@@ -125,7 +125,7 @@ async function runAdapters(rawArgs: string[]): Promise<void> {
   if (enableTelegram) {
     if (!config.telegram.botToken) {
       console.warn(
-        '[claude-sidecar] --telegram requested but TELEGRAM_BOT_TOKEN missing in env or ~/.claude/adapters.json — skipping',
+        '[claude-sidecar] --telegram requested but TELEGRAM_BOT_TOKEN missing in env or ~/.cc-tools/adapters.json — skipping',
       )
     } else {
       console.log('[claude-sidecar] starting Telegram adapter')
@@ -138,7 +138,7 @@ async function runAdapters(rawArgs: string[]): Promise<void> {
   if (enableWechat) {
     if (!config.wechat.accountId || !config.wechat.botToken) {
       console.warn(
-        '[claude-sidecar] --wechat requested but no QR-bound WeChat account found in env or ~/.claude/adapters.json — skipping',
+        '[claude-sidecar] --wechat requested but no QR-bound WeChat account found in env or ~/.cc-tools/adapters.json — skipping',
       )
     } else {
       console.log('[claude-sidecar] starting WeChat adapter')
@@ -150,7 +150,7 @@ async function runAdapters(rawArgs: string[]): Promise<void> {
   if (enableDingtalk) {
     if (!config.dingtalk.clientId || !config.dingtalk.clientSecret) {
       console.warn(
-        '[claude-sidecar] --dingtalk requested but DINGTALK_CLIENT_ID / DINGTALK_CLIENT_SECRET missing in env or ~/.claude/adapters.json — skipping',
+        '[claude-sidecar] --dingtalk requested but DINGTALK_CLIENT_ID / DINGTALK_CLIENT_SECRET missing in env or ~/.cc-tools/adapters.json — skipping',
       )
     } else {
       console.log('[claude-sidecar] starting DingTalk adapter')
@@ -161,7 +161,7 @@ async function runAdapters(rawArgs: string[]): Promise<void> {
 
   if (started === 0) {
     console.error(
-      '[claude-sidecar] no adapter could be started — check credentials in env or ~/.claude/adapters.json',
+      '[claude-sidecar] no adapter could be started — check credentials in env or ~/.cc-tools/adapters.json',
     )
     process.exit(1)
   }

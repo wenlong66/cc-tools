@@ -10,7 +10,7 @@ describe('WebSearch backend resolver', () => {
   test('detects Claude models by model name instead of provider URL', () => {
     expect(isLikelyClaudeModel('claude-sonnet-4-5')).toBe(true)
     expect(isLikelyClaudeModel('anthropic/claude-3-7-sonnet')).toBe(true)
-    expect(isLikelyClaudeModel('anthropic.claude-opus-4-1')).toBe(true)
+    expect(isLikelyClaudeModel('anthropic.cc-tools-opus-4-1')).toBe(true)
     expect(isLikelyClaudeModel('MiniMax-M2.7-highspeed')).toBe(false)
   })
 

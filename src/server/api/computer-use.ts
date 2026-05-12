@@ -131,7 +131,7 @@ async function runCommand(
 
 /**
  * Ensure runtime source files (requirements.txt, mac_helper.py) exist in
- * ~/.claude/.runtime/. In dev mode they are copied from the project's
+ * ~/.cc-tools/.runtime/. In dev mode they are copied from the project's
  * runtime/ directory; in bundled mode requirements.txt is written from the
  * embedded constant and mac_helper.py is copied from the project dir (if
  * available) or skipped (it will already have been extracted on a prior run).
@@ -320,7 +320,7 @@ async function runSetup(): Promise<SetupResult> {
         : `Python ${pythonRuntime.version}`,
   })
 
-  // Step 2: Extract runtime files to ~/.claude/.runtime/
+  // Step 2: Extract runtime files to ~/.cc-tools/.runtime/
   try {
     await ensureRuntimeFiles()
     steps.push({ name: 'runtime_files', ok: true, message: '运行时文件已就绪' })
@@ -435,7 +435,7 @@ async function runSetup(): Promise<SetupResult> {
 }
 
 // ============================================================================
-// Authorized Apps configuration — stored in ~/.claude/cc-haha/computer-use-config.json
+// Authorized Apps configuration — stored in ~/.cc-tools/cc-tools/computer-use-config.json
 // ============================================================================
 
 type AuthorizedApp = {

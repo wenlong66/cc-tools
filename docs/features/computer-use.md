@@ -170,7 +170,7 @@ cc-tools --no-computer-use
 CLAUDE_COMPUTER_USE_ENABLED=0 cc-tools
 ```
 
-也可以写入全局配置文件 `~/.claude/cc-haha/computer-use-config.json`：
+也可以写入全局配置文件 `~/.cc-tools/cc-tools/computer-use-config.json`：
 
 ```json
 {

@@ -80,4 +80,4 @@ All illustrations use dark background (#1a1a2e) with Anthropic brand copper-oran
 - [CC-Tools Home](/en/)
 - [Agent Framework Deep Dive](/en/agent/03-agent-framework)
 - [Skills System Documentation](/en/skills/01-usage-guide)
-- [GitHub Issues](https://github.com/NanmiCoder/cc-haha/issues)
+- [GitHub Issues](https://github.com/wenlong66/cc-tools/issues)

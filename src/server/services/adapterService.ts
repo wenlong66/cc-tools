@@ -1,7 +1,7 @@
 /**
  * Adapter Service — 读写 IM Adapter 配置文件
  *
- * 配置文件：~/.claude/adapters.json
+ * 配置文件：~/.cc-tools/adapters.json
  * 原子写入：先写临时文件，再 rename
  */
 

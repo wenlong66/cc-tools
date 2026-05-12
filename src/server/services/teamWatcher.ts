@@ -1,5 +1,5 @@
 /**
- * TeamWatcher -- monitors ~/.claude/teams/ for changes and pushes
+ * TeamWatcher -- monitors ~/.cc-tools/teams/ for changes and pushes
  * real-time updates to all connected WebSocket clients.
  *
  * Uses polling (setInterval) rather than fs.watch for cross-platform reliability.

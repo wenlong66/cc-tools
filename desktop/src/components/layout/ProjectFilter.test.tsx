@@ -57,7 +57,7 @@ describe('ProjectFilter', () => {
           realPath: '/Users/nanmi/workspace/myself_code/cc-tools',
           projectName: 'cc-tools',
           isGit: true,
-          repoName: 'NanmiCoder/cc-haha',
+          repoName: 'NanmiCoder/cc-tools',
           branch: 'main',
           modifiedAt: '2026-04-20T10:00:00.000Z',
           sessionCount: 4,
@@ -80,17 +80,17 @@ describe('ProjectFilter', () => {
     fireEvent.click(screen.getByRole('button', { name: /All projects/i }))
 
     await waitFor(() => {
-      expect(screen.getByText('NanmiCoder/cc-haha')).toBeInTheDocument()
+      expect(screen.getByText('NanmiCoder/cc-tools')).toBeInTheDocument()
       expect(screen.getByText('/Users/nanmi/workspace/myself_code/cc-tools')).toBeInTheDocument()
       expect(screen.getByText('NanmiCoder/OpenCutSkill')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /NanmiCoder\/cc-haha/i }))
+    fireEvent.click(screen.getByRole('button', { name: /NanmiCoder\/cc-tools/i }))
 
     await waitFor(() => {
       expect(useSessionStore.getState().selectedProjects).toEqual(['Users-nanmi-workspace-myself_code-cc-tools'])
     })
 
-    expect(screen.getAllByRole('button', { name: /NanmiCoder\/cc-haha/i })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /NanmiCoder\/cc-tools/i })).toHaveLength(2)
   })
 })
