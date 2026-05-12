@@ -737,7 +737,7 @@ function cleanupSessionRuntimeState(sessionId: string) {
 }
 
 function getPrewarmIdleTimeoutMs(): number {
-  const raw = process.env.CC_HAHA_PREWARM_IDLE_TIMEOUT_MS
+  const raw = process.env.CC_TOOLS_PREWARM_IDLE_TIMEOUT_MS
   if (!raw) return DEFAULT_PREWARM_IDLE_TIMEOUT_MS
   const parsed = Number.parseInt(raw, 10)
   return Number.isFinite(parsed) && parsed >= 0

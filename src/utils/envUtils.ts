@@ -7,7 +7,7 @@ import { join } from 'path'
 export const getClaudeConfigHomeDir = memoize(
   (): string => {
     return (
-      process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+      process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.cc-tools')
     ).normalize('NFC')
   },
   () => process.env.CLAUDE_CONFIG_DIR,
@@ -17,6 +17,33 @@ export function getTeamsDir(): string {
   return join(getClaudeConfigHomeDir(), 'teams')
 }
 
+export function getCCToolsConfigDir(): string {
+  return join(getClaudeConfigHomeDir(), 'cc-tools')
+}
+
+export function getCCToolsSettingsPath(): string {
+  return join(getCCToolsConfigDir(), 'settings.json')   
+}
+
+export function getDiagnosticsDir(): string {
+  return join(getCCToolsConfigDir(), 'diagnostics')
+}
+
+export function getCCToolsProvidersPath(): string {
+  return join(getCCToolsConfigDir(), 'providers.json')
+}
+
+export function getCCToolsComputerUseConfigPath(): string {
+  return join(getCCToolsConfigDir(), 'computer-use-config.json')
+}
+
+export function getManagedOpenAIOAuthPath(): string {
+  return join(getCCToolsConfigDir(), 'openai-oauth.json')
+}
+
+export function getManagedOAuthPath(): string {
+  return join(getCCToolsConfigDir(), 'oauth.json')
+}
 /**
  * Check if NODE_OPTIONS contains a specific flag.
  * Splits on whitespace and checks for exact match to avoid false positives.

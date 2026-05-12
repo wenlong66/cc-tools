@@ -7,7 +7,7 @@ describe('ProjectContextChip', () => {
   it('keeps the source project label and adds worktree identity', () => {
     render(
       <ProjectContextChip
-        workDir="/workspace/OpenCutSkill/.claude/worktrees/desktop-main-54a09f85"
+        workDir="/workspace/OpenCutSkill/.cc-tools/worktrees/desktop-main-54a09f85"
         sourceWorkDir="/workspace/OpenCutSkill"
         repoName={null}
         branch="main"

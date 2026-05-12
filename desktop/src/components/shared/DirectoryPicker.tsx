@@ -19,7 +19,7 @@ type DirEntry = { name: string; path: string; isDirectory: boolean }
 let cachedProjects: RecentProject[] | null = null
 let cacheTimestamp = 0
 const CACHE_TTL = 30_000 // 30s
-const DESKTOP_WORKTREE_MARKER = '/.claude/worktrees/'
+const DESKTOP_WORKTREE_MARKER = '/.cc-tools/worktrees/'
 
 function isTauriRuntime() {
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)

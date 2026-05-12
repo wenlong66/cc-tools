@@ -2,7 +2,7 @@
  * Local staging directory for IM-downloaded resources.
  *
  * Layout: {root}/{platform}/{sessionId}/{safeName}
- * Default root: ~/.claude/im-downloads
+ * Default root: ~/.cc-tools/im-downloads
  *
  * Responsibilities:
  *  - Generate unique, safe paths from (platform, sessionId, originalName)
@@ -29,7 +29,7 @@ const DEFAULT_RETENTION_MS = 24 * 60 * 60 * 1000
 const DEFAULT_ORPHAN_GRACE_MS = 10 * 60 * 1000
 
 function defaultRoot(): string {
-  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
   return path.join(configDir, 'im-downloads')
 }
 

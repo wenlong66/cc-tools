@@ -113,7 +113,7 @@ All illustrations use a dark background (#1a1a2e) + Anthropic brand copper-orang
 
 ## Related Resources
 
-- [Claude Code Haha Home](/en/)
+- [CC-Tools Home](/en/)
 - [Memory system source code](https://github.com/NanmiCoder/cc-haha/tree/main/src/memdir/)
 - [Auto-extraction service](https://github.com/NanmiCoder/cc-haha/tree/main/src/services/extractMemories/)
 - [AutoDream service](https://github.com/NanmiCoder/cc-haha/tree/main/src/services/autoDream/)

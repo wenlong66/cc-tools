@@ -55,7 +55,7 @@ const MOCK_AGENTS = [
     systemPrompt: '# Code Reviewer\n\nYou are an expert code reviewer.',
     color: 'blue',
     source: 'userSettings' as const,
-    baseDir: '~/.claude/agents',
+    baseDir: '~/.cc-tools/agents',
     isActive: true,
   },
   {
@@ -79,7 +79,7 @@ const MOCK_AGENTS = [
     systemPrompt: undefined,
     color: undefined,
     source: 'projectSettings' as const,
-    baseDir: '/workspace/project/.claude/agents',
+    baseDir: '/workspace/project/.cc-tools/agents',
     isActive: false,
     overriddenBy: 'userSettings' as const,
   },
@@ -92,7 +92,7 @@ const MOCK_AGENTS = [
     systemPrompt: 'Pair Telegram access for the current workspace.',
     color: 'cyan',
     source: 'plugin' as const,
-    baseDir: '/Users/test/.claude/plugins/cache/telegram',
+    baseDir: '/Users/test/.cc-tools/plugins/cache/telegram',
     isActive: true,
   },
 ]

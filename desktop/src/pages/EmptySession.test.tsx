@@ -387,7 +387,7 @@ describe('EmptySession', () => {
         },
       ],
       worktrees: [{
-        path: '/workspace/project/.claude/worktrees/desktop-feature-a-12345678',
+        path: '/workspace/project/.cc-tools/worktrees/desktop-feature-a-12345678',
         branch: 'worktree-desktop-feature-a-12345678',
         current: true,
       }],

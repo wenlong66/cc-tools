@@ -29,7 +29,7 @@
     "apiKeyUrl": "https://platform.deepseek.com/api_keys",
     "authStrategy": "auth_token",
     "defaultEnv": {
-      "CC_HAHA_SEND_DISABLED_THINKING": "1"
+      "CC_TOOLS_SEND_DISABLED_THINKING": "1"
     },
     "modelContextWindows": {
       "deepseek-v4-pro": 1000000,
@@ -55,7 +55,7 @@
     "promoText": "智谱 GLM 为 cc-haha 用户准备了专属邀请福利，使用此链接注册后可领取新用户权益。",
     "authStrategy": "auth_token",
     "defaultEnv": {
-      "CC_HAHA_SEND_DISABLED_THINKING": "1"
+      "CC_TOOLS_SEND_DISABLED_THINKING": "1"
     },
     "modelContextWindows": {
       "glm-5.1": 200000,
@@ -79,7 +79,7 @@
     "apiKeyUrl": "https://platform.kimi.com/console/api-keys",
     "authStrategy": "auth_token",
     "defaultEnv": {
-      "CC_HAHA_SEND_DISABLED_THINKING": "1"
+      "CC_TOOLS_SEND_DISABLED_THINKING": "1"
     },
     "modelContextWindows": {
       "kimi-k2.6": 262144,

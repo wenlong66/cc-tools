@@ -44,7 +44,7 @@ describe('ProjectFilter', () => {
       selectedProjects: [],
       availableProjects: [
         'Users-nanmi-workspace-myself_code-OpenCutSkill',
-        'Users-nanmi-workspace-myself_code-claude-code-haha',
+        'Users-nanmi-workspace-myself_code-cc-tools',
       ],
     })
   })
@@ -53,9 +53,9 @@ describe('ProjectFilter', () => {
     getRecentProjectsMock.mockResolvedValue({
       projects: [
         {
-          projectPath: 'Users-nanmi-workspace-myself_code-claude-code-haha',
-          realPath: '/Users/nanmi/workspace/myself_code/claude-code-haha',
-          projectName: 'claude-code-haha',
+          projectPath: 'Users-nanmi-workspace-myself_code-cc-tools',
+          realPath: '/Users/nanmi/workspace/myself_code/cc-tools',
+          projectName: 'cc-tools',
           isGit: true,
           repoName: 'NanmiCoder/cc-haha',
           branch: 'main',
@@ -81,14 +81,14 @@ describe('ProjectFilter', () => {
 
     await waitFor(() => {
       expect(screen.getByText('NanmiCoder/cc-haha')).toBeInTheDocument()
-      expect(screen.getByText('/Users/nanmi/workspace/myself_code/claude-code-haha')).toBeInTheDocument()
+      expect(screen.getByText('/Users/nanmi/workspace/myself_code/cc-tools')).toBeInTheDocument()
       expect(screen.getByText('NanmiCoder/OpenCutSkill')).toBeInTheDocument()
     })
 
     fireEvent.click(screen.getByRole('button', { name: /NanmiCoder\/cc-haha/i }))
 
     await waitFor(() => {
-      expect(useSessionStore.getState().selectedProjects).toEqual(['Users-nanmi-workspace-myself_code-claude-code-haha'])
+      expect(useSessionStore.getState().selectedProjects).toEqual(['Users-nanmi-workspace-myself_code-cc-tools'])
     })
 
     expect(screen.getAllByRole('button', { name: /NanmiCoder\/cc-haha/i })).toHaveLength(2)

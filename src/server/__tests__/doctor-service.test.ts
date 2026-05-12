@@ -15,7 +15,7 @@ let originalConfigDir: string | undefined
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'doctor-service-test-'))
   homeDir = path.join(tmpDir, 'home')
-  configDir = path.join(homeDir, '.claude')
+  configDir = path.join(homeDir, '.cc-tools')
   projectRoot = path.join(tmpDir, 'workspace', 'demo-project')
   originalConfigDir = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = configDir
@@ -23,10 +23,10 @@ beforeEach(async () => {
   await fs.mkdir(path.join(configDir, 'projects', 'demo-project'), { recursive: true })
   await fs.mkdir(path.join(configDir, 'skills', 'alpha-skill'), { recursive: true })
   await fs.mkdir(path.join(configDir, 'cc-haha'), { recursive: true })
-  await fs.mkdir(path.join(projectRoot, '.claude', 'skills', 'beta-skill'), { recursive: true })
+  await fs.mkdir(path.join(projectRoot, '.cc-tools', 'skills', 'beta-skill'), { recursive: true })
 
   await fs.writeFile(path.join(configDir, 'settings.json'), '{"defaultMode":', 'utf-8')
-  await fs.writeFile(path.join(projectRoot, '.claude', 'settings.json'), '{"model":', 'utf-8')
+  await fs.writeFile(path.join(projectRoot, '.cc-tools', 'settings.json'), '{"model":', 'utf-8')
   await fs.writeFile(
     path.join(configDir, 'projects', 'demo-project', 'session-1.jsonl'),
     '{"type":"message"}\n{bad json}\n',
@@ -43,7 +43,7 @@ beforeEach(async () => {
     'utf-8',
   )
   await fs.writeFile(
-    path.join(projectRoot, '.claude', 'skills', 'beta-skill', 'SKILL.md'),
+    path.join(projectRoot, '.cc-tools', 'skills', 'beta-skill', 'SKILL.md'),
     '# Beta\n',
     'utf-8',
   )
@@ -81,20 +81,20 @@ describe('DoctorService', () => {
     expect(serialized).not.toContain(tmpDir)
     expect(serialized).not.toContain(projectRoot)
 
-    const userSettings = report.items.find((item) => item.path === '~/.claude/settings.json')
+    const userSettings = report.items.find((item) => item.path === '~/.cc-tools/settings.json')
     expect(userSettings).toBeDefined()
     expect(userSettings?.protected).toBe(true)
     expect(userSettings?.status).toBe('invalid_json')
 
     const projectSettings = report.items.find(
-      (item) => item.path === '<project>/.claude/settings.json',
+      (item) => item.path === '<project>/.cc-tools/settings.json',
     )
     expect(projectSettings).toBeDefined()
     expect(projectSettings?.protected).toBe(true)
     expect(projectSettings?.status).toBe('invalid_json')
 
     const sessionJsonl = report.items.find(
-      (item) => item.path === '~/.claude/projects/demo-project/session-1.jsonl',
+      (item) => item.path === '~/.cc-tools/projects/demo-project/session-1.jsonl',
     )
     expect(sessionJsonl).toBeDefined()
     expect(sessionJsonl?.protected).toBe(true)
@@ -104,10 +104,10 @@ describe('DoctorService', () => {
 
     expect(report.protectedSkips).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: '~/.claude/settings.json', reason: 'protected' }),
-        expect.objectContaining({ path: '<project>/.claude/settings.json', reason: 'protected' }),
+        expect.objectContaining({ path: '~/.cc-tools/settings.json', reason: 'protected' }),
+        expect.objectContaining({ path: '<project>/.cc-tools/settings.json', reason: 'protected' }),
         expect.objectContaining({
-          path: '~/.claude/projects/demo-project/session-1.jsonl',
+          path: '~/.cc-tools/projects/demo-project/session-1.jsonl',
           reason: 'protected',
         }),
       ]),
@@ -117,7 +117,7 @@ describe('DoctorService', () => {
   test('safe repair skips protected malformed files without modifying them', async () => {
     const service = new DoctorService({ configDir, homeDir, projectRoot })
     const userSettingsPath = path.join(configDir, 'settings.json')
-    const projectSettingsPath = path.join(projectRoot, '.claude', 'settings.json')
+    const projectSettingsPath = path.join(projectRoot, '.cc-tools', 'settings.json')
     const beforeUser = await fs.readFile(userSettingsPath, 'utf-8')
     const beforeProject = await fs.readFile(projectSettingsPath, 'utf-8')
 
@@ -127,8 +127,8 @@ describe('DoctorService', () => {
     expect(result.operations).toEqual([])
     expect(result.skips).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: '~/.claude/settings.json', reason: 'protected' }),
-        expect.objectContaining({ path: '<project>/.claude/settings.json', reason: 'protected' }),
+        expect.objectContaining({ path: '~/.cc-tools/settings.json', reason: 'protected' }),
+        expect.objectContaining({ path: '<project>/.cc-tools/settings.json', reason: 'protected' }),
       ]),
     )
 
@@ -171,7 +171,7 @@ describe('doctor API', () => {
     expect(body.report.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: '~/.claude/settings.json',
+          path: '~/.cc-tools/settings.json',
           status: 'invalid_json',
         }),
       ]),

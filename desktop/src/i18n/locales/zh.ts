@@ -126,7 +126,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // Settings > Terminal
   'settings.terminal.title': '终端',
-  'settings.terminal.description': '直接运行宿主机命令，用于安装插件、Skills、MCP 等扩展。桌面端已内置 claude-haha；文档里的 claude <参数> 可替换成 claude-haha <参数>，例如 claude-haha plugin install ... 或 claude-haha mcp add ...',
+  'settings.terminal.description': '直接运行宿主机命令，用于安装插件、Skills、MCP 等扩展。桌面端已内置 cc-tools；文档里的 claude <参数> 可替换成 cc-tools <参数>，例如 cc-tools plugin install ... 或 cc-tools mcp add ...',
   'settings.terminal.clear': '清屏',
   'settings.terminal.restart': '重启',
   'settings.terminal.windowTitle': '宿主机 Shell',
@@ -187,7 +187,7 @@ export const zh: Record<TranslationKey, string> = {
   'errorBoundary.description': '错误已记录到诊断日志。',
 
   // Settings > Claude Official Login
-  'settings.claudeOfficialLogin.intro': '使用官方 Claude 模型需要登录你的 Claude.ai 账号。点击下方按钮,浏览器会打开 Claude 官方登录页面,授权后自动回到这里。',
+  'settings.claudeOfficialLogin.intro': '此构建已禁用 OAuth 登录。请改为在设置中配置 Anthropic API 或其他自定义 provider。',
   'settings.claudeOfficialLogin.loginButton': '登录 Claude 账号',
   'settings.claudeOfficialLogin.loginStarting': '正在启动…',
   'settings.claudeOfficialLogin.logoutButton': '登出',
@@ -201,8 +201,8 @@ export const zh: Record<TranslationKey, string> = {
   'settings.providers.title': '服务商',
   'settings.providers.description': '管理 API 服务商以访问模型。',
   'settings.providers.addProvider': '添加服务商',
-  'settings.providers.officialName': 'Claude 官方',
-  'settings.providers.officialDesc': 'Anthropic 原生接入 — 无需 API 密钥',
+  'settings.providers.officialName': 'Anthropic API',
+  'settings.providers.officialDesc': 'Anthropic API 配置入口',
   'settings.providers.connected': '已连接 ({latency}ms)',
   'settings.providers.failed': '失败: {error}',
   'settings.providers.connectivityOk': '① 连通 ({latency}ms)',
@@ -257,7 +257,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.providers.autoCompactWindowRangeError': '范围必须在 16000 到 10000000 之间。',
   'settings.providers.testConnection': '测试连接',
   'settings.providers.settingsJson': '设置 JSON',
-  'settings.providers.settingsJsonDesc': '~/.claude/cc-haha/settings.json — 直接编辑，保存时写入。',
+  'settings.providers.settingsJsonDesc': '~/.cc-tools/cc-haha/settings.json — 直接编辑，保存时写入。',
   'settings.providers.jsonError': 'JSON 语法错误: {error}',
   'settings.providers.apiFormat': 'API 格式',
   'settings.providers.apiFormatAnthropic': 'Anthropic Messages (原生)',
@@ -495,7 +495,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // Settings > Skills
   'settings.skills.title': '已安装技能',
-  'settings.skills.description': '技能扩展 Claude 的能力。在 ~/.claude/skills/ 中管理技能。',
+  'settings.skills.description': '技能扩展 Claude 的能力。在 ~/.cc-tools/skills/ 中管理技能。',
   'settings.skills.browserTitle': '浏览已安装技能',
   'settings.skills.browserEyebrow': '技能浏览器',
   'settings.skills.browserDescription': '查看内置、项目和用户技能，比较它们的来源与规模，并打开技能目录阅读文档和源码文件。',
@@ -513,7 +513,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.skills.ready': '可查看',
   'settings.skills.unavailable': '不可用',
   'settings.skills.empty': '暂无已安装技能',
-  'settings.skills.emptyHint': '在 ~/.claude/skills/ 中添加技能即可开始',
+  'settings.skills.emptyHint': '在 ~/.cc-tools/skills/ 中添加技能即可开始',
   'settings.skills.back': '返回列表',
   'settings.skills.files': '个文件',
   'settings.skills.entryFile': '入口文件',
@@ -696,7 +696,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.general.notificationsStatusUnsupported': '当前环境不可用',
   'settings.general.notificationsAuthorize': '授权通知',
   'settings.general.notificationsOpenSettings': '打开系统设置',
-  'settings.general.notificationsTestTitle': 'Claude Code Haha 通知已启用',
+  'settings.general.notificationsTestTitle': 'CC-Tools 通知已启用',
   'settings.general.notificationsTestBody': '后续授权确认和 Agent 回复完成都会通过系统通知提醒。',
   'settings.general.h5AccessTitle': 'H5 访问',
   'settings.general.h5AccessDescription': '通过一次性生成的令牌和允许来源列表，为手机或其他设备上的浏览器访问开启可选 H5 模式。',

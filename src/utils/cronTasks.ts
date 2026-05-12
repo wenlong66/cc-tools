@@ -1,4 +1,4 @@
-// Scheduled prompts, stored in <project>/.claude/scheduled_tasks.json.
+// Scheduled prompts, stored in <project>/.cc-tools/scheduled_tasks.json.
 //
 // Tasks come in two flavors:
 //   - One-shot (recurring: false/undefined) — fire once, then auto-delete.
@@ -103,7 +103,7 @@ export type CronTaskMeta = {
 
 type CronFile = { tasks: CronTask[] }
 
-const CRON_FILE_REL = join('.claude', 'scheduled_tasks.json')
+const CRON_FILE_REL = join('.cc-tools', 'scheduled_tasks.json')
 
 /**
  * Path to the cron file. `dir` defaults to getProjectRoot() — pass it
@@ -115,7 +115,7 @@ export function getCronFilePath(dir?: string): string {
 }
 
 /**
- * Read and parse .claude/scheduled_tasks.json. Returns an empty task list if the file
+ * Read and parse .cc-tools/scheduled_tasks.json. Returns an empty task list if the file
  * is missing, empty, or malformed. Tasks with invalid cron strings are
  * silently dropped (logged at debug level) so a single bad entry never
  * blocks the whole file.
@@ -207,7 +207,7 @@ export function hasCronTasksSync(dir?: string): boolean {
 }
 
 /**
- * Overwrite .claude/scheduled_tasks.json with the given tasks. Creates .claude/ if
+ * Overwrite .cc-tools/scheduled_tasks.json with the given tasks. Creates .cc-tools/ if
  * missing. Empty task list writes an empty file (rather than deleting) so
  * the file watcher sees a change event on last-task-removed.
  */
@@ -216,7 +216,7 @@ export async function writeCronTasks(
   dir?: string,
 ): Promise<void> {
   const root = dir ?? getProjectRoot()
-  await mkdir(join(root, '.claude'), { recursive: true })
+  await mkdir(join(root, '.cc-tools'), { recursive: true })
   // Strip runtime-only flags — everything on disk is durable by definition,
   // and agentId is session-scoped (teammates don't persist across sessions).
   const body: CronFile = {
@@ -235,7 +235,7 @@ export async function writeCronTasks(
  *
  * When `durable` is false the task is held in process memory only
  * (bootstrap/state.ts) — it fires on schedule this session but is never
- * written to .claude/scheduled_tasks.json and dies with the process. The
+ * written to .cc-tools/scheduled_tasks.json and dies with the process. The
  * scheduler merges session tasks into its tick loop directly, so no file
  * change event is needed.
  */

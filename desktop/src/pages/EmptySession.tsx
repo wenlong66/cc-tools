@@ -519,7 +519,7 @@ export function EmptySession() {
         }`}>
           <img
             src="/app-icon.png"
-            alt="Claude Code Haha"
+            alt="CC-Tools"
             className={isMobileComposer ? 'mb-4 h-16 w-16' : 'mb-6 h-24 w-24'}
           />
           <h1

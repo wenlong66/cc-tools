@@ -118,7 +118,7 @@ describe('cron scheduler launcher resolution', () => {
     ])
   })
 
-  it('prefers an explicit CC_HAHA_ROOT when it points at a source checkout', async () => {
+  it('prefers an explicit CC_TOOLS_ROOT when it points at a source checkout', async () => {
     const sourceRoot = path.join(tmpDir, 'source')
     await createSourceRoot(sourceRoot)
 
@@ -126,7 +126,7 @@ describe('cron scheduler launcher resolution', () => {
       resolveCronProjectRoot({
         cwd: path.join(tmpDir, 'other'),
         moduleDir: path.join(tmpDir, 'broken', 'src', 'server', 'services'),
-        env: { CC_HAHA_ROOT: sourceRoot },
+        env: { CC_TOOLS_ROOT: sourceRoot },
       }),
     ).toBe(sourceRoot)
   })

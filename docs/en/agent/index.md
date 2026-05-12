@@ -121,7 +121,7 @@ All diagrams use a dark background (#1a1a2e) with Anthropic brand copper-orange 
 
 ## Related Resources
 
-- [Claude Code Haha Home](/)
+- [CC-Tools Home](/)
 - [Memory System Documentation](/en/memory/01-usage-guide)
 - [Agent Tool Source Code](https://github.com/NanmiCoder/cc-haha/tree/main/src/tools/AgentTool/)
 - [Swarm Infrastructure](https://github.com/NanmiCoder/cc-haha/tree/main/src/utils/swarm/)

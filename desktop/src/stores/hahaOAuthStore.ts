@@ -1,9 +1,11 @@
 // desktop/src/stores/hahaOAuthStore.ts
 
 import { create } from 'zustand'
-import { hahaOAuthApi, type HahaOAuthStatus } from '../api/hahaOAuth'
-
-const POLL_INTERVAL_MS = 2_000
+import {
+  hahaOAuthApi,
+  OAUTH_DISABLED_MESSAGE,
+  type HahaOAuthStatus,
+} from '../api/hahaOAuth'
 
 type HahaOAuthState = {
   status: HahaOAuthStatus | null
@@ -12,86 +14,70 @@ type HahaOAuthState = {
   error: string | null
 
   fetchStatus: () => Promise<void>
-  login: () => Promise<{ authorizeUrl: string }>
+  login: () => Promise<never>
   logout: () => Promise<void>
   startPolling: () => void
   stopPolling: () => void
 }
 
-export const useHahaOAuthStore = create<HahaOAuthState>((set, get) => {
-  let pollTimer: ReturnType<typeof setTimeout> | null = null
+const disabledStatus: HahaOAuthStatus = {
+  loggedIn: false,
+  disabled: true,
+  message: OAUTH_DISABLED_MESSAGE,
+}
 
-  return {
-    status: null,
-    isPolling: false,
-    isLoading: false,
-    error: null,
+export const useHahaOAuthStore = create<HahaOAuthState>(set => ({
+  status: disabledStatus,
+  isPolling: false,
+  isLoading: false,
+  error: null,
 
-    fetchStatus: async () => {
-      try {
-        const status = await hahaOAuthApi.status()
-        set({ status, error: null })
-      } catch (err) {
-        set({ error: err instanceof Error ? err.message : String(err) })
-      }
-    },
+  fetchStatus: async () => {
+    try {
+      const status = await hahaOAuthApi.status()
+      set({ status, error: null })
+    } catch (err) {
+      set({
+        status: disabledStatus,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  },
 
-    login: async () => {
-      set({ isLoading: true, error: null })
-      try {
-        const res = await hahaOAuthApi.start()
-        set({ isLoading: false })
-        return { authorizeUrl: res.authorizeUrl }
-      } catch (err) {
-        set({
-          isLoading: false,
-          error: err instanceof Error ? err.message : String(err),
-        })
-        throw err
-      }
-    },
+  login: async () => {
+    set({ isLoading: true, error: null })
+    const error = new Error(OAUTH_DISABLED_MESSAGE)
+    set({
+      isLoading: false,
+      status: disabledStatus,
+      error: error.message,
+    })
+    throw error
+  },
 
-    logout: async () => {
-      get().stopPolling()
-      set({ isLoading: true })
-      try {
-        await hahaOAuthApi.logout()
-        set({ status: { loggedIn: false }, isLoading: false })
-      } catch (err) {
-        set({
-          isLoading: false,
-          error: err instanceof Error ? err.message : String(err),
-        })
-        throw err
-      }
-    },
+  logout: async () => {
+    set({ isLoading: true, error: null })
+    try {
+      await hahaOAuthApi.logout()
+      set({
+        status: disabledStatus,
+        isLoading: false,
+      })
+    } catch (err) {
+      set({
+        status: disabledStatus,
+        isLoading: false,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw err
+    }
+  },
 
-    startPolling: () => {
-      if (pollTimer) return
-      set({ isPolling: true })
+  startPolling: () => {
+    set({ isPolling: false })
+  },
 
-      const scheduleNext = () => {
-        pollTimer = setTimeout(async () => {
-          await get().fetchStatus()
-          const cur = get().status
-          if (cur && cur.loggedIn) {
-            get().stopPolling()
-            return
-          }
-          if (get().isPolling) {
-            scheduleNext()
-          }
-        }, POLL_INTERVAL_MS)
-      }
-      scheduleNext()
-    },
-
-    stopPolling: () => {
-      if (pollTimer) {
-        clearTimeout(pollTimer)
-        pollTimer = null
-      }
-      set({ isPolling: false })
-    },
-  }
-})
+  stopPolling: () => {
+    set({ isPolling: false })
+  },
+}))

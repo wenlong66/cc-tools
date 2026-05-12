@@ -320,7 +320,7 @@ describe('ChatInput file mentions', () => {
   it('starts an empty active session on the selected branch inside an isolated worktree', async () => {
     mocks.create.mockResolvedValueOnce({
       sessionId: 'created-worktree',
-      workDir: '/repo/.claude/worktrees/desktop-feature-a-12345678',
+      workDir: '/repo/.cc-tools/worktrees/desktop-feature-a-12345678',
     })
     mocks.list.mockImplementationOnce(() => new Promise(() => {}))
     useSessionStore.setState({
@@ -383,7 +383,7 @@ describe('ChatInput file mentions', () => {
       attachments: [],
     })
     expect(useSessionStore.getState().sessions[0]?.workDir)
-      .toBe('/repo/.claude/worktrees/desktop-feature-a-12345678')
+      .toBe('/repo/.cc-tools/worktrees/desktop-feature-a-12345678')
   })
 
   it('turns a selected @ file into a chip without corrupting the typed path', async () => {

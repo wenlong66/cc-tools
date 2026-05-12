@@ -39,7 +39,7 @@ desktop/package-lock.json
 desktop/brand-assets/
 
 # Claude local config & auto-generated
-.claude/
+.cc-tools/
 
 # Superpowers plans & specs (local only)
 docs/superpowers/

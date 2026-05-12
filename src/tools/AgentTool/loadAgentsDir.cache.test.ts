@@ -26,7 +26,7 @@ describe('agent definition cache invalidation', () => {
 
     process.env.HOME = tmpHome
     process.env.USERPROFILE = tmpHome
-    process.env.CLAUDE_CONFIG_DIR = path.join(tmpHome, '.claude')
+    process.env.CLAUDE_CONFIG_DIR = path.join(tmpHome, '.cc-tools')
     clearAgentDefinitionsCache()
   })
 

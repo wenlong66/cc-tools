@@ -34,7 +34,9 @@ import REQUIREMENTS_WIN32 from '../../../runtime/requirements-win.txt' with { ty
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '../../..')
 const devRuntimeRoot = join(projectRoot, 'runtime')
-const claudeHome = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+const claudeHome =
+  process.env.CLAUDE_CONFIG_DIR ??
+  join(homedir(), '.cc-tools')
 const runtimeStateRoot = join(claudeHome, '.runtime')
 const venvRoot = join(runtimeStateRoot, 'venv')
 const installStampPath = join(runtimeStateRoot, 'requirements.sha256')

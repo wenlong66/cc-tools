@@ -124,7 +124,7 @@ export const en = {
 
   // Settings > Terminal
   'settings.terminal.title': 'Terminal',
-  'settings.terminal.description': 'Run host-machine commands for plugin, skill, and MCP setup. The desktop app includes claude-haha; replace documented claude <args> with claude-haha <args>, for example: claude-haha plugin install ... or claude-haha mcp add ...',
+  'settings.terminal.description': 'Run host-machine commands for plugin, skill, and MCP setup. The desktop app includes cc-tools; replace documented claude <args> with cc-tools <args>, for example: cc-tools plugin install ... or cc-tools mcp add ...',
   'settings.terminal.clear': 'Clear',
   'settings.terminal.restart': 'Restart',
   'settings.terminal.windowTitle': 'Host shell',
@@ -185,7 +185,7 @@ export const en = {
   'errorBoundary.description': 'The error was recorded in Diagnostics.',
 
   // Settings > Claude Official Login
-  'settings.claudeOfficialLogin.intro': 'Using official Claude models requires signing in to your Claude.ai account. Click the button below to open the official Claude login page in your browser; you\'ll be returned here after authorizing.',
+  'settings.claudeOfficialLogin.intro': 'OAuth login is disabled in this build. Configure an Anthropic API key or another custom provider instead.',
   'settings.claudeOfficialLogin.loginButton': 'Sign in to Claude',
   'settings.claudeOfficialLogin.loginStarting': 'Opening…',
   'settings.claudeOfficialLogin.logoutButton': 'Sign out',
@@ -199,8 +199,8 @@ export const en = {
   'settings.providers.title': 'Providers',
   'settings.providers.description': 'Manage API providers for model access.',
   'settings.providers.addProvider': 'Add Provider',
-  'settings.providers.officialName': 'Claude Official',
-  'settings.providers.officialDesc': 'Anthropic native — no API key required',
+  'settings.providers.officialName': 'Anthropic API',
+  'settings.providers.officialDesc': 'Anthropic API configuration entry',
   'settings.providers.connected': 'Connected ({latency}ms)',
   'settings.providers.failed': 'Failed: {error}',
   'settings.providers.connectivityOk': '① Connectivity ({latency}ms)',
@@ -255,7 +255,7 @@ export const en = {
   'settings.providers.autoCompactWindowRangeError': 'Must be between 16000 and 10000000.',
   'settings.providers.testConnection': 'Test Connection',
   'settings.providers.settingsJson': 'Settings JSON',
-  'settings.providers.settingsJsonDesc': '~/.claude/cc-haha/settings.json — edit directly, will be written on save.',
+  'settings.providers.settingsJsonDesc': '~/.cc-tools/cc-haha/settings.json — edit directly, will be written on save.',
   'settings.providers.jsonError': 'JSON syntax error: {error}',
   'settings.providers.apiFormat': 'API Format',
   'settings.providers.apiFormatAnthropic': 'Anthropic Messages (native)',
@@ -493,7 +493,7 @@ export const en = {
 
   // Settings > Skills
   'settings.skills.title': 'Installed Skills',
-  'settings.skills.description': 'Skills extend Claude with specialized capabilities. Manage skills in ~/.claude/skills/',
+  'settings.skills.description': 'Skills extend Claude with specialized capabilities. Manage skills in ~/.cc-tools/skills/',
   'settings.skills.browserTitle': 'Browse installed skills',
   'settings.skills.browserEyebrow': 'Skill Browser',
   'settings.skills.browserDescription': 'Inspect bundled, project, and user skills, compare their scope, and open each skill folder to read its docs and source files.',
@@ -511,7 +511,7 @@ export const en = {
   'settings.skills.ready': 'Ready',
   'settings.skills.unavailable': 'Unavailable',
   'settings.skills.empty': 'No skills installed',
-  'settings.skills.emptyHint': 'Add skills to ~/.claude/skills/ to get started',
+  'settings.skills.emptyHint': 'Add skills to ~/.cc-tools/skills/ to get started',
   'settings.skills.back': 'Back to list',
   'settings.skills.files': 'files',
   'settings.skills.entryFile': 'entry file',
@@ -694,7 +694,7 @@ export const en = {
   'settings.general.notificationsStatusUnsupported': 'Unavailable in this environment',
   'settings.general.notificationsAuthorize': 'Authorize',
   'settings.general.notificationsOpenSettings': 'Open Settings',
-  'settings.general.notificationsTestTitle': 'Claude Code Haha notifications are enabled',
+  'settings.general.notificationsTestTitle': 'CC-Tools notifications are enabled',
   'settings.general.notificationsTestBody': 'Permission prompts and completed agent replies will now use system notifications.',
   'settings.general.h5AccessTitle': 'H5 Access',
   'settings.general.h5AccessDescription': 'Opt in to browser access from your phone or another device using a generated token and an allowlisted origin set.',

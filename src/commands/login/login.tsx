@@ -6,7 +6,6 @@ import { clearTrustedDeviceToken, enrollTrustedDevice } from '../../bridge/trust
 import type { LocalJSXCommandContext } from '../../commands.js';
 import { ConfigurableShortcutHint } from '../../components/ConfigurableShortcutHint.js';
 import { Dialog } from '../../components/design-system/Dialog.js';
-import { SlashLoginFlow } from '../../components/SlashLoginFlow.js';
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
 import { Text } from '../../ink.js';
 import { refreshGrowthBookAfterAuthChange } from '../../services/analytics/growthbook.js';
@@ -79,22 +78,20 @@ export function Login(props) {
     t1 = $[5];
   }
   let t2;
-  if ($[6] !== props.startingMessage || $[7] !== t1) {
-    t2 = <SlashLoginFlow onDone={t1} startingMessage={props.startingMessage} />;
-    $[6] = props.startingMessage;
-    $[7] = t1;
-    $[8] = t2;
+  if ($[6] === Symbol.for("react.memo_cache_sentinel")) {
+    t2 = <Text>OAuth login is disabled in CC-Tools. Configure an API provider instead.</Text>;
+    $[6] = t2;
   } else {
-    t2 = $[8];
+    t2 = $[6];
   }
   let t3;
-  if ($[9] !== t0 || $[10] !== t2) {
-    t3 = <Dialog title="Login" onCancel={t0} color="permission" inputGuide={_temp}>{t2}</Dialog>;
-    $[9] = t0;
-    $[10] = t2;
-    $[11] = t3;
+  if ($[7] !== t0 || $[8] !== t2) {
+    t3 = <Dialog title="API provider setup" onCancel={t0} color="permission" inputGuide={_temp}>{t2}</Dialog>;
+    $[7] = t0;
+    $[8] = t2;
+    $[9] = t3;
   } else {
-    t3 = $[11];
+    t3 = $[9];
   }
   return t3;
 }

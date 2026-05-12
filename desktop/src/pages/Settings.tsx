@@ -842,7 +842,7 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
     setIsSubmitting(true)
     try {
       // Write the edited cc-haha settings.json first so provider-specific model
-      // settings never conflict with the user's global ~/.claude/settings.json.
+      // settings never conflict with the user's global ~/.cc-tools/settings.json.
       if (settingsJson.trim()) {
         try {
           const parsed = restoreSettingsJsonSecrets(JSON.parse(settingsJson), settingsJson, apiKey)
@@ -2644,8 +2644,8 @@ function AboutSettings() {
   return (
     <div className="w-full min-w-0 max-w-lg mx-auto flex flex-col items-center py-6">
       {/* Logo + App Name + Version */}
-      <img src="/app-icon.png" alt="Claude Code Haha" className="w-20 h-20 mb-4" />
-      <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Claude Code Haha</h1>
+      <img src="/app-icon.png" alt="CC-Tools" className="w-20 h-20 mb-4" />
+      <h1 className="text-xl font-bold text-[var(--color-text-primary)]">CC-Tools</h1>
       {version && (
         <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-text-tertiary)]">
           <span>{t('settings.about.version')} {version}</span>

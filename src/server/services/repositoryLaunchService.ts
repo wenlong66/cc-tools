@@ -426,7 +426,7 @@ async function createDesktopWorktree(
   }
 
   const slug = safeWorktreeSlug(branch.name, sessionId)
-  const worktreePath = path.join(context.repoRoot, '.claude', 'worktrees', slug)
+  const worktreePath = path.join(context.repoRoot, '.cc-tools', 'worktrees', slug)
   const branchName = worktreeBranchName(slug)
 
   await ensureWorktreesDirExcluded(context.repoRoot)
@@ -473,7 +473,7 @@ function planIsolatedWorktree(
   }
 
   const slug = safeWorktreeSlug(branch.name, sessionId)
-  const worktreePath = path.join(context.repoRoot, '.claude', 'worktrees', slug)
+  const worktreePath = path.join(context.repoRoot, '.cc-tools', 'worktrees', slug)
   const branchName = worktreeBranchName(slug)
 
   return {

@@ -5,7 +5,7 @@ import type { DingtalkRegistrationBegin, DingtalkRegistrationPoll } from '../api
 
 /**
  * Tauri command 触发器：让主进程 kill + respawn adapter sidecar，
- * 让 ~/.claude/adapters.json 里的最新凭据被新进程读到，建立飞书 / Telegram / 微信 / 钉钉
+ * 让 ~/.cc-tools/adapters.json 里的最新凭据被新进程读到，建立飞书 / Telegram / 微信 / 钉钉
  * 的 WebSocket 连接。
  *
  * 在非 Tauri 环境（纯浏览器调试 / 单元测试）这会安静失败 —— 那种场景下

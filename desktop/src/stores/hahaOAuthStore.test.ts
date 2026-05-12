@@ -1,14 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { startMock, statusMock, logoutMock } = vi.hoisted(() => ({
-  startMock: vi.fn(),
+const { statusMock, logoutMock } = vi.hoisted(() => ({
   statusMock: vi.fn(),
   logoutMock: vi.fn(),
 }))
 
 vi.mock('../api/hahaOAuth', () => ({
+  OAUTH_DISABLED_MESSAGE:
+    'OAuth login is disabled in CC-Tools; configure an API provider instead.',
   hahaOAuthApi: {
-    start: startMock,
     status: statusMock,
     logout: logoutMock,
   },
@@ -20,57 +20,44 @@ const initialState = useHahaOAuthStore.getState()
 
 describe('hahaOAuthStore', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
-    startMock.mockReset()
     statusMock.mockReset()
     logoutMock.mockReset()
     useHahaOAuthStore.setState({
       ...initialState,
-      status: null,
       isPolling: false,
       isLoading: false,
       error: null,
     })
   })
 
-  afterEach(() => {
-    useHahaOAuthStore.getState().stopPolling()
-    useHahaOAuthStore.setState(initialState)
-    vi.useRealTimers()
+  it('login fails with the API-only disabled message', async () => {
+    await expect(useHahaOAuthStore.getState().login()).rejects.toThrow(
+      'OAuth login is disabled in CC-Tools; configure an API provider instead.',
+    )
+
+    expect(useHahaOAuthStore.getState().isPolling).toBe(false)
+    expect(useHahaOAuthStore.getState().error).toBe(
+      'OAuth login is disabled in CC-Tools; configure an API provider instead.',
+    )
+    expect(useHahaOAuthStore.getState().status).toMatchObject({
+      loggedIn: false,
+      disabled: true,
+    })
   })
 
-  it('login does not start polling until the browser launch succeeds', async () => {
-    startMock.mockResolvedValue({
-      authorizeUrl: 'http://localhost:3456/api/haha-oauth/callback',
-      state: 'state-123',
+  it('fetchStatus preserves the disabled status from the API', async () => {
+    statusMock.mockResolvedValue({
+      loggedIn: false,
+      disabled: true,
+      message:
+        'OAuth login is disabled in CC-Tools; configure an API provider instead.',
     })
 
-    const result = await useHahaOAuthStore.getState().login()
+    await useHahaOAuthStore.getState().fetchStatus()
 
-    expect(result.authorizeUrl).toContain('/api/haha-oauth/callback')
-    expect(useHahaOAuthStore.getState().isPolling).toBe(false)
-  })
-
-  it('startPolling stops after the status becomes logged in', async () => {
-    statusMock
-      .mockResolvedValueOnce({ loggedIn: false })
-      .mockResolvedValueOnce({
-        loggedIn: true,
-        expiresAt: Date.now() + 60_000,
-        scopes: ['user:inference'],
-        subscriptionType: 'max',
-      })
-
-    useHahaOAuthStore.getState().startPolling()
-    expect(useHahaOAuthStore.getState().isPolling).toBe(true)
-
-    await vi.advanceTimersByTimeAsync(2_000)
-    expect(useHahaOAuthStore.getState().isPolling).toBe(true)
-
-    await vi.advanceTimersByTimeAsync(2_000)
     expect(useHahaOAuthStore.getState().status).toMatchObject({
-      loggedIn: true,
-      subscriptionType: 'max',
+      loggedIn: false,
+      disabled: true,
     })
     expect(useHahaOAuthStore.getState().isPolling).toBe(false)
   })

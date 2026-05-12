@@ -1,9 +1,9 @@
 /**
  * Provider Service — preset-based provider configuration
  *
- * Storage: ~/.claude/cc-haha/providers.json (lightweight index)
- * Active provider env vars written to ~/.claude/cc-haha/settings.json
- * (isolated from the original Claude Code's ~/.claude/settings.json)
+ * Storage: ~/.cc-tools/cc-tools/providers.json (lightweight index)
+ * Active provider env vars written to ~/.cc-tools/cc-tools/settings.json
+ * (isolated from the original Claude Code's ~/.cc-tools/settings.json)
  */
 
 import * as fs from 'fs/promises'
@@ -182,15 +182,15 @@ export class ProviderService {
     return ProviderService.serverPort
   }
   private getConfigDir(): string {
-    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
   }
 
-  private getCcHahaDir(): string {
-    return path.join(this.getConfigDir(), 'cc-haha')
+  private getCCToolsDir(): string {
+    return path.join(this.getConfigDir(), 'cc-tools')
   }
 
   private getIndexPath(): string {
-    return path.join(this.getCcHahaDir(), 'providers.json')
+    return path.join(this.getCCToolsDir(), 'providers.json')
   }
 
   private async readIndex(): Promise<ProvidersIndex> {
@@ -444,17 +444,17 @@ export class ProviderService {
 
   /**
    * Check whether any usable auth exists:
-   *  1. A cc-haha provider is active → has auth
-   *  2. Original ~/.claude/settings.json has ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY → has auth
+   *  1. A cc-tools provider is active → has auth
+   *  2. Original ~/.cc-tools/settings.json has ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY → has auth
    *  3. process.env already has ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN → has auth
    *  4. None of the above → needs setup
    */
   async checkAuthStatus(): Promise<{
     hasAuth: boolean
-    source: 'cc-haha-provider' | 'original-settings' | 'env' | 'none'
+    source: 'cc-tools-provider' | 'original-settings' | 'env' | 'none'
     activeProvider?: string
   }> {
-    // 1. Check cc-haha active provider
+    // 1. Check cc-tools active provider
     const index = await this.readIndex()
     if (index.activeId) {
       const provider = index.providers.find(p => p.id === index.activeId)
@@ -463,7 +463,7 @@ export class ProviderService {
         const needsProxy = provider.apiFormat != null && provider.apiFormat !== 'anthropic'
         const authEnv = buildProviderAuthEnv(provider, presetDefaultEnv, needsProxy)
         if (Object.values(authEnv).some(value => value.length > 0)) {
-          return { hasAuth: true, source: 'cc-haha-provider', activeProvider: provider.name }
+          return { hasAuth: true, source: 'cc-tools-provider', activeProvider: provider.name }
         }
       }
     }

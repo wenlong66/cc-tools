@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { isRemoteManagedSettingsEligible } from '../services/remoteManagedSettings/syncCache.js'
 import { clearCACertsCache } from './caCerts.js'
 import { getGlobalConfig } from './config.js'
-import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
+import {
+  getCCToolsSettingsPath,
+  isEnvTruthy,
+} from './envUtils.js'
 import {
   isProviderManagedEnvVar,
   SAFE_ENV_VARS,
@@ -93,15 +95,14 @@ function filterSettingsEnv(
 }
 
 /**
- * Read env vars from ~/.claude/cc-haha/settings.json (Haha-specific provider
- * config). This file is written by ProviderService.syncToSettings() and
+ * Read env vars from ~/.cc-tools/cc-tools/settings.json (CC-tools
+ * provider config). This file is written by ProviderService.syncToSettings() and
  * contains ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, model defaults, etc.
  * Returns an empty object if the file doesn't exist or is invalid.
  */
-function getCcHahaSettingsEnv(): Record<string, string> {
+function getCCToolsSettingsEnv(): Record<string, string> {
   try {
-    const ccHahaSettings = join(getClaudeConfigHomeDir(), 'cc-haha', 'settings.json')
-    const raw = readFileSync(ccHahaSettings, 'utf-8')
+    const raw = readFileSync(getCCToolsSettingsPath(), 'utf-8')
     const parsed = JSON.parse(raw) as { env?: Record<string, string> }
     return parsed.env ?? {}
   } catch {
@@ -167,11 +168,11 @@ export function applySafeConfigEnvironmentVariables(): void {
     )
   }
 
-  // cc-haha provider isolation: apply env from ~/.claude/cc-haha/settings.json
+  // Managed provider isolation: apply env from ~/.cc-tools/provider-settings.json
   // AFTER userSettings so Haha-specific provider config takes priority over
   // the original Claude Code's settings. This prevents Haha from polluting
   // ~/.claude/settings.json while still allowing it to override provider vars.
-  Object.assign(process.env, filterSettingsEnv(getCcHahaSettingsEnv()))
+  Object.assign(process.env, filterSettingsEnv(getCCToolsSettingsEnv()))
 
   // Compute remote-managed-settings eligibility now, with userSettings and
   // flagSettings env applied. Eligibility reads CLAUDE_CODE_USE_BEDROCK,
@@ -216,7 +217,7 @@ export function applyConfigEnvironmentVariables(): void {
 
   // cc-haha provider isolation: same as in applySafeConfigEnvironmentVariables,
   // apply Haha-specific env last so it overrides the original settings.
-  Object.assign(process.env, filterSettingsEnv(getCcHahaSettingsEnv()))
+  Object.assign(process.env, filterSettingsEnv(getCCToolsSettingsEnv()))
 
   // Clear caches so agents are rebuilt with the new env vars
   clearCACertsCache()

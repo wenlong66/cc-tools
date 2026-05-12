@@ -2,8 +2,8 @@
  * Settings Service — 读写用户级和项目级设置文件
  *
  * 设置文件为 JSON 格式：
- *   - 用户级: ~/.claude/settings.json
- *   - 项目级: {projectRoot}/.claude/settings.json
+ *   - 用户级: ~/.cc-tools/settings.json
+ *   - 项目级: {projectRoot}/.cc-tools/settings.json
  *
  * 合并策略：Object.assign({}, userSettings, projectSettings)
  */
@@ -36,7 +36,7 @@ export class SettingsService {
 
   /** 配置目录，支持通过环境变量覆盖（便于测试） */
   private getConfigDir(): string {
-    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
   }
 
   /** 用户级设置文件路径 */
@@ -50,7 +50,7 @@ export class SettingsService {
     if (!root) {
       throw ApiError.badRequest('Project root is required for project settings')
     }
-    return path.join(root, '.claude', 'settings.json')
+    return path.join(root, '.cc-tools', 'settings.json')
   }
 
   // ---------------------------------------------------------------------------

@@ -216,7 +216,7 @@ describe('SettingsService', () => {
 
   it('should read and write project settings', async () => {
     const projectRoot = path.join(tmpDir, 'myproject')
-    await fs.mkdir(path.join(projectRoot, '.claude'), { recursive: true })
+    await fs.mkdir(path.join(projectRoot, '.cc-tools'), { recursive: true })
 
     const svc = new SettingsService(projectRoot)
     await svc.updateProjectSettings({ outputStyle: 'verbose' })
@@ -227,7 +227,7 @@ describe('SettingsService', () => {
 
   it('should merge user and project settings', async () => {
     const projectRoot = path.join(tmpDir, 'myproject')
-    await fs.mkdir(path.join(projectRoot, '.claude'), { recursive: true })
+    await fs.mkdir(path.join(projectRoot, '.cc-tools'), { recursive: true })
 
     const svc = new SettingsService(projectRoot)
     await svc.updateUserSettings({ theme: 'dark', model: 'claude-opus-4-7' })
@@ -363,7 +363,7 @@ describe('Settings API', () => {
 
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.command).toBe('claude-haha')
+    expect(body.command).toBe('cc-tools')
     expect(body.installed).toBe(true)
     expect(body.availableInNewTerminals).toBe(true)
   })

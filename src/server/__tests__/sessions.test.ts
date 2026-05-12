@@ -919,7 +919,7 @@ describe('SessionService', () => {
     ])
     const worktreeFile = await writeSessionFile('-tmp-project--claude-worktrees-desktop-main-12345678', sessionId, [
       makeSnapshotEntry(),
-      makeSessionMetaEntry('/tmp/project/.claude/worktrees/desktop-main-12345678'),
+      makeSessionMetaEntry('/tmp/project/.cc-tools/worktrees/desktop-main-12345678'),
     ])
 
     const oldTime = new Date('2026-01-01T00:00:00.000Z')
@@ -928,15 +928,15 @@ describe('SessionService', () => {
     await fs.utimes(worktreeFile, newTime, newTime)
 
     const workDir = await service.getSessionWorkDir(sessionId)
-    expect(workDir).toBe('/tmp/project/.claude/worktrees/desktop-main-12345678')
+    expect(workDir).toBe('/tmp/project/.cc-tools/worktrees/desktop-main-12345678')
   })
 
   it('should recover CLI worktree state from transcript metadata', async () => {
     const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     await writeSessionFile('-tmp-project--claude-worktrees-desktop-main-12345678', sessionId, [
       makeSnapshotEntry(),
-      makeSessionMetaEntry('/tmp/project/.claude/worktrees/desktop-main-12345678'),
-      makeWorktreeStateEntry(sessionId, '/tmp/project/.claude/worktrees/desktop-main-12345678', {
+      makeSessionMetaEntry('/tmp/project/.cc-tools/worktrees/desktop-main-12345678'),
+      makeWorktreeStateEntry(sessionId, '/tmp/project/.cc-tools/worktrees/desktop-main-12345678', {
         originalCwd: '/tmp/project',
       }),
       makeUserEntry('Hello from CLI worktree'),
@@ -945,7 +945,7 @@ describe('SessionService', () => {
     const launchInfo = await service.getSessionLaunchInfo(sessionId)
     expect(launchInfo?.worktreeSession).toMatchObject({
       originalCwd: '/tmp/project',
-      worktreePath: '/tmp/project/.claude/worktrees/desktop-main-12345678',
+      worktreePath: '/tmp/project/.cc-tools/worktrees/desktop-main-12345678',
       worktreeName: 'desktop-main-12345678',
       worktreeBranch: 'worktree-desktop-main-12345678',
       originalBranch: 'main',
@@ -966,7 +966,7 @@ describe('SessionService', () => {
     expect(launchInfo?.repository).toMatchObject({
       requestedWorkDir: await fs.realpath(workDir),
       worktree: true,
-      worktreePath: expect.stringContaining(path.join('.claude', 'worktrees', 'desktop-feature-rail-')),
+      worktreePath: expect.stringContaining(path.join('.cc-tools', 'worktrees', 'desktop-feature-rail-')),
     })
   })
 
@@ -975,17 +975,17 @@ describe('SessionService', () => {
     const sourceFile = await writeSessionFile('-tmp-source', sessionId, [
       makeSnapshotEntry(),
       { type: 'session-meta', isMeta: true, workDir: '/tmp/source', timestamp: '2026-01-01T00:00:00.000Z' },
-      { type: 'session-meta', isMeta: true, workDir: '/tmp/source/.claude/worktrees/desktop-agent', timestamp: '2026-01-01T00:00:02.000Z' },
+      { type: 'session-meta', isMeta: true, workDir: '/tmp/source/.cc-tools/worktrees/desktop-agent', timestamp: '2026-01-01T00:00:02.000Z' },
     ])
     const worktreeFile = await writeSessionFile('-tmp-source--claude-worktrees-desktop-agent', sessionId, [
       makeSnapshotEntry(),
-      { type: 'session-meta', isMeta: true, workDir: '/tmp/source/.claude/worktrees/desktop-agent', timestamp: '2026-01-01T00:00:01.000Z' },
+      { type: 'session-meta', isMeta: true, workDir: '/tmp/source/.cc-tools/worktrees/desktop-agent', timestamp: '2026-01-01T00:00:01.000Z' },
       makeUserEntry('Hello from worktree'),
     ])
 
     const removed = await service.deletePlaceholderSessionFiles(
       sessionId,
-      '/tmp/source/.claude/worktrees/desktop-agent',
+      '/tmp/source/.cc-tools/worktrees/desktop-agent',
     )
 
     expect(removed).toBe(1)
@@ -1093,7 +1093,7 @@ describe('SessionService', () => {
       branch: 'feature/rail',
       worktree: true,
       baseRef: 'feature/rail',
-      worktreePath: expect.stringContaining(path.join('.claude', 'worktrees', 'desktop-feature-rail-')),
+      worktreePath: expect.stringContaining(path.join('.cc-tools', 'worktrees', 'desktop-feature-rail-')),
       worktreeBranch: expect.stringContaining('worktree-desktop-feature-rail-'),
       worktreeSlug: expect.stringContaining('desktop-feature-rail-'),
     })
@@ -1252,7 +1252,7 @@ describe('SessionService', () => {
   })
 
   it('should throw when workDir does not exist', async () => {
-    expect(service.createSession('/tmp/definitely-missing-claude-code-haha')).rejects.toThrow(
+    expect(service.createSession('/tmp/definitely-missing-cc-tools')).rejects.toThrow(
       'Working directory does not exist'
     )
   })
@@ -1693,7 +1693,7 @@ describe('Sessions API', () => {
   it('GET /api/sessions/:id/git-info should use CLI worktree-state after reload', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
-    const activeWorktree = path.join(workDir, '.claude', 'worktrees', 'desktop-main-12345678')
+    const activeWorktree = path.join(workDir, '.cc-tools', 'worktrees', 'desktop-main-12345678')
     git(workDir, 'worktree', 'add', '-b', 'worktree-desktop-main-12345678', activeWorktree, 'main')
     await writeSessionFile(sanitizePath(activeWorktree), sessionId, [
       makeSnapshotEntry(),
@@ -1735,7 +1735,7 @@ describe('Sessions API', () => {
   it('GET /api/sessions/:id/git-info should prefer CLI worktree-state identity over desktop metadata', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
-    const activeWorktree = path.join(workDir, '.claude', 'worktrees', 'desktop-main-12345678')
+    const activeWorktree = path.join(workDir, '.cc-tools', 'worktrees', 'desktop-main-12345678')
     git(workDir, 'worktree', 'add', '-b', 'worktree-desktop-main-12345678', activeWorktree, 'main')
     await writeSessionFile(sanitizePath(activeWorktree), sessionId, [
       makeSnapshotEntry(),
@@ -1749,7 +1749,7 @@ describe('Sessions API', () => {
           branch: 'main',
           worktree: true,
           baseRef: 'main',
-          worktreePath: '/stale/source/.claude/worktrees/stale',
+          worktreePath: '/stale/source/.cc-tools/worktrees/stale',
           worktreeBranch: 'worktree-stale',
           worktreeSlug: 'stale',
         },
@@ -1882,10 +1882,10 @@ describe('Sessions API', () => {
     const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     const workDir = path.join(tmpDir, 'workspace', 'app')
 
-    await fs.mkdir(path.join(workDir, '.claude', 'skills'), { recursive: true })
+    await fs.mkdir(path.join(workDir, '.cc-tools', 'skills'), { recursive: true })
     await fs.mkdir(path.join(tmpDir, 'skills'), { recursive: true })
     await writeSkill(path.join(tmpDir, 'skills'), 'user-skill', 'User skill description')
-    await writeSkill(path.join(workDir, '.claude', 'skills'), 'project-skill', 'Project skill description')
+    await writeSkill(path.join(workDir, '.cc-tools', 'skills'), 'project-skill', 'Project skill description')
 
     await writeSessionFile('-tmp-api-test', sessionId, [
       makeSnapshotEntry(),

@@ -16,7 +16,7 @@ let migrationPromise: Promise<MigrationReport> | null = null
 let migrationConfigDir: string | null = null
 
 function getConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+  return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
 }
 
 function isRecord(value: unknown): value is JsonObject {
@@ -161,17 +161,17 @@ async function migrateJsonEntry(
 
 async function runPersistentStorageMigrations(configDir: string): Promise<MigrationReport> {
   const report: MigrationReport = { migratedEntries: [], failures: [] }
-  const ccHahaDir = path.join(configDir, 'cc-haha')
+  const ccToolsDir = path.join(configDir, 'cc-tools')
 
   await migrateJsonEntry(
-    path.join(ccHahaDir, 'providers.json'),
-    'cc-haha/providers.json',
+    path.join(ccToolsDir, 'providers.json'),
+    'cc-tools/providers.json',
     report,
     migrateProvidersIndex,
   )
   await migrateJsonEntry(
-    path.join(ccHahaDir, 'settings.json'),
-    'cc-haha/settings.json',
+    path.join(ccToolsDir, 'settings.json'),
+    'cc-tools/settings.json',
     report,
     migrateManagedSettings,
   )

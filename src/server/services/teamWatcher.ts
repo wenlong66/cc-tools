@@ -18,7 +18,9 @@ import type { ServerMessage, TeamMemberStatus } from '../ws/events.js'
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 function getTeamsDir(): string {
-  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+  const configDir =
+    process.env.CLAUDE_CONFIG_DIR ||
+    path.join(os.homedir(), '.cc-tools')
   return path.join(configDir, 'teams')
 }
 

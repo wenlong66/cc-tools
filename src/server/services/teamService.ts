@@ -81,7 +81,7 @@ type TeamFileRaw = {
 
 export class TeamService {
   private getConfigDir(): string {
-    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
   }
 
   private getTeamsDir(): string {

@@ -37,7 +37,7 @@ describe('Skills API', () => {
 
     process.env.HOME = tmpHome
     process.env.USERPROFILE = tmpHome
-    process.env.CLAUDE_CONFIG_DIR = path.join(tmpHome, '.claude')
+    process.env.CLAUDE_CONFIG_DIR = path.join(tmpHome, '.cc-tools')
     setCwdState(tmpHome)
   })
 
@@ -65,7 +65,7 @@ describe('Skills API', () => {
   })
 
   it('lists user and project skills for the requested cwd', async () => {
-    const userSkillsRoot = path.join(tmpHome, '.claude', 'skills')
+    const userSkillsRoot = path.join(tmpHome, '.cc-tools', 'skills')
     const projectRoot = path.join(tmpHome, 'workspace')
     const cwd = path.join(projectRoot, 'packages', 'app')
 
@@ -75,7 +75,7 @@ describe('Skills API', () => {
       ['---', 'description: User scope', '---', '', '# User skill'].join('\n'),
     )
     await writeSkill(
-      path.join(projectRoot, '.claude', 'skills'),
+      path.join(projectRoot, '.cc-tools', 'skills'),
       'project-skill',
       ['---', 'description: Project scope', '---', '', '# Project skill'].join('\n'),
     )
@@ -92,8 +92,8 @@ describe('Skills API', () => {
   it('resolves project skill details from the nearest project skills directory', async () => {
     const projectRoot = path.join(tmpHome, 'workspace')
     const nestedRoot = path.join(projectRoot, 'packages', 'app')
-    const nestedSkillsRoot = path.join(nestedRoot, '.claude', 'skills')
-    const parentSkillsRoot = path.join(projectRoot, '.claude', 'skills')
+    const nestedSkillsRoot = path.join(nestedRoot, '.cc-tools', 'skills')
+    const parentSkillsRoot = path.join(projectRoot, '.cc-tools', 'skills')
 
     await writeSkill(
       parentSkillsRoot,

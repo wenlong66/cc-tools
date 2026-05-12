@@ -264,7 +264,7 @@ describe('Settings > Plugins tab', () => {
         version: '1.2.3',
         description: 'GitHub integration',
         authorName: 'Anthropic',
-        installPath: '/Users/test/.claude/plugins/cache/github',
+        installPath: '/Users/test/.cc-tools/plugins/cache/github',
         componentCounts: {
           commands: 1,
           agents: 1,

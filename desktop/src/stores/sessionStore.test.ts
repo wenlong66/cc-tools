@@ -152,7 +152,7 @@ describe('sessionStore', () => {
   it('forwards isolated worktree repository options when creating a session', async () => {
     createMock.mockResolvedValue({
       sessionId: 'session-worktree-launch',
-      workDir: '/workspace/repo/.claude/worktrees/desktop-feature-rail-12345678',
+      workDir: '/workspace/repo/.cc-tools/worktrees/desktop-feature-rail-12345678',
     })
     listMock.mockImplementation(() => new Promise(() => {}))
 
@@ -165,6 +165,6 @@ describe('sessionStore', () => {
       repository: { branch: 'feature/rail', worktree: true },
     })
     expect(useSessionStore.getState().sessions[0]?.workDir)
-      .toBe('/workspace/repo/.claude/worktrees/desktop-feature-rail-12345678')
+      .toBe('/workspace/repo/.cc-tools/worktrees/desktop-feature-rail-12345678')
   })
 })

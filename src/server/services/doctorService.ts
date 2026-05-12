@@ -2,7 +2,13 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import type { Dirent } from 'node:fs'
-import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import {
+  getClaudeConfigHomeDir,
+  getManagedOAuthPath,
+  getManagedOpenAIOAuthPath,
+  getCCToolsSettingsPath,
+  getCCToolsProvidersPath,
+} from '../../utils/envUtils.js'
 import { diagnosticsService } from './diagnosticsService.js'
 
 export type DoctorItemKind = 'json' | 'jsonl' | 'directory'
@@ -161,16 +167,16 @@ export class DoctorService {
     const targets: DoctorTarget[] = [
       this.jsonTarget('user-settings', 'User settings', 'user', path.join(this.configDir, 'settings.json')),
       this.jsonTarget(
-        'cc-haha-providers',
+        'cc-tools-providers',
         'Managed providers',
         'user',
-        path.join(this.configDir, 'cc-haha', 'providers.json'),
+        getCCToolsProvidersPath(),
       ),
       this.jsonTarget(
-        'cc-haha-settings',
+        'cc-tools-settings',
         'Managed provider settings',
         'user',
-        path.join(this.configDir, 'cc-haha', 'settings.json'),
+        getCCToolsSettingsPath(),
       ),
       this.jsonTarget('adapters', 'Adapters config', 'user', path.join(this.configDir, 'adapters.json')),
       this.jsonTarget(
@@ -189,12 +195,12 @@ export class DoctorService {
         path.join(this.configDir, 'cowork_plugins'),
       ),
       this.jsonTarget('user-mcp', 'User MCP config', 'user', this.getUserMcpConfigPath()),
-      this.jsonTarget('oauth', 'OAuth tokens', 'user', path.join(this.configDir, 'cc-haha', 'oauth.json')),
+      this.jsonTarget('oauth', 'OAuth tokens', 'user', getManagedOAuthPath()),
       this.jsonTarget(
         'openai-oauth',
         'OpenAI OAuth tokens',
         'user',
-        path.join(this.configDir, 'cc-haha', 'openai-oauth.json'),
+        getManagedOpenAIOAuthPath(),
       ),
     ]
 
@@ -204,13 +210,13 @@ export class DoctorService {
           'project-settings',
           'Project settings',
           'project',
-          path.join(this.projectRoot, '.claude', 'settings.json'),
+          path.join(this.projectRoot, '.cc-tools', 'settings.json'),
         ),
         this.directoryTarget(
           'project-skills',
           'Project skills',
           'project',
-          path.join(this.projectRoot, '.claude', 'skills'),
+          path.join(this.projectRoot, '.cc-tools', 'skills'),
         ),
         this.jsonTarget(
           'project-mcp',
@@ -376,7 +382,7 @@ export class DoctorService {
       return this.withAlias('<project>', filePath, this.projectRoot)
     }
     if (isWithinRoot(filePath, this.configDir)) {
-      return this.withAlias('~/.claude', filePath, this.configDir)
+      return this.withAlias('~/.cc-tools', filePath, this.configDir)
     }
     if (isWithinRoot(filePath, this.homeDir)) {
       return this.withAlias('~', filePath, this.homeDir)
@@ -388,7 +394,7 @@ export class DoctorService {
     let sanitized = diagnosticsService.sanitizeString(value)
     const replacements: Array<[string | undefined, string]> = [
       [this.projectRoot, '<project>'],
-      [this.configDir, '~/.claude'],
+      [this.configDir, '~/.cc-tools'],
       [this.homeDir, '~'],
     ]
 
@@ -401,9 +407,9 @@ export class DoctorService {
 
   private getUserMcpConfigPath(): string {
     if (this.usesConfigDirOverride) {
-      return path.join(this.configDir, '.claude.json')
+      return path.join(this.configDir, '.cc-tools.json')
     }
-    return path.join(this.homeDir, '.claude.json')
+    return path.join(this.homeDir, '.cc-tools.json')
   }
 
   private async listJsonlFiles(rootDir: string): Promise<string[]> {
@@ -493,7 +499,7 @@ function countVisibleEntries(entries: Dirent[]): number {
 }
 
 function inferHomeDir(configDir: string): string {
-  if (path.basename(configDir) === '.claude') {
+  if (path.basename(configDir) === '.cc-tools') {
     return path.dirname(configDir)
   }
   return os.homedir()

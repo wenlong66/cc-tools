@@ -12,6 +12,7 @@
 import * as fs from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
+import { getManagedOpenAIOAuthPath } from '../../utils/envUtils.js'
 import {
   generateCodeVerifier,
   generateCodeChallenge,
@@ -62,9 +63,7 @@ export class HahaOpenAIOAuthService {
   }
 
   private getOAuthFilePath(): string {
-    const configDir =
-      process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
-    return path.join(configDir, 'cc-haha', 'openai-oauth.json')
+    return getManagedOpenAIOAuthPath()
   }
 
   async loadTokens(): Promise<StoredOpenAIOAuthTokens | null> {
