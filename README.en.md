@@ -13,7 +13,7 @@
 [![License](https://img.shields.io/github/license/NanmiCoder/cc-haha)](https://github.com/NanmiCoder/cc-haha/blob/main/LICENSE)
 [![中文](https://img.shields.io/badge/🇨🇳_中文-Available-green)](README.md)
 [![English](https://img.shields.io/badge/🇺🇸_English-当前-blue)](README.en.md)
-[![Docs](https://img.shields.io/badge/📖_Documentation-Visit-D97757)](https://claudecode-haha.relakkesyang.org)
+[![Docs](https://img.shields.io/badge/📖_Documentation-Visit-FF7A00)](https://claudecode-haha.relakkesyang.org)
 
 </div>
 
@@ -30,7 +30,7 @@ A Claude Code build repaired from the source leaked from Anthropic's npm registr
 The Claude Code Haha desktop app brings sessions, multi-project navigation, branch / Worktree controls, right-side file changes, code diffs, permission review, provider setup, and remote access into one graphical workspace for daily development flows beyond the terminal.
 
 <p align="center">
-  <a href="https://github.com/NanmiCoder/cc-haha/releases"><img src="https://img.shields.io/badge/⬇_Download_Desktop-macOS_%7C_Windows-D97757?style=for-the-badge" alt="Download Desktop"></a>
+  <a href="https://github.com/NanmiCoder/cc-haha/releases"><img src="https://img.shields.io/badge/⬇_Download_Desktop-macOS_%7C_Windows-FF7A00?style=for-the-badge" alt="Download Desktop"></a>
   &nbsp;
   <a href="docs/desktop/04-installation.md"><img src="https://img.shields.io/badge/📖_Install_Guide-Guide-gray?style=for-the-badge" alt="Install Guide"></a>
 </p>

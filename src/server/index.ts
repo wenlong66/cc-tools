@@ -8,7 +8,7 @@
 import { handleApiRequest } from './router.js'
 import { handleWebSocket, type WebSocketData } from './ws/handler.js'
 import { resolveCors, type CorsResolution } from './middleware/cors.js'
-import { requireAuth } from './middleware/auth.js'
+import { requireAuth, requireH5Token } from './middleware/auth.js'
 import { teamWatcher } from './services/teamWatcher.js'
 import { cronScheduler } from './services/cronScheduler.js'
 import { handleProxyRequest } from './proxy/handler.js'
@@ -20,6 +20,8 @@ import { enableConfigs } from '../utils/config.js'
 import { diagnosticsService } from './services/diagnosticsService.js'
 import { ensurePersistentStorageUpgraded } from './services/persistentStorageMigrations.js'
 import { handleStaticH5Request } from './staticH5.js'
+import { classifyH5Request, shouldBlockDisabledH5Access, shouldRequireH5Token } from './h5AccessPolicy.js'
+import { H5AccessService } from './services/h5AccessService.js'
 
 function readArgValue(flag: string): string | undefined {
   const args = process.argv.slice(2)
@@ -68,6 +70,54 @@ function corsRejectedResponse(cors: CorsResolution): Response {
   )
 }
 
+function h5AccessControlRejectedResponse(): Response {
+  return Response.json(
+    {
+      error: 'Forbidden',
+      message: 'H5 access settings can only be changed from the local desktop app.',
+    },
+    { status: 403 },
+  )
+}
+
+function h5AccessDisabledResponse(): Response {
+  return Response.json(
+    {
+      error: 'Forbidden',
+      message: 'H5 access is disabled. Enable H5 access from the local desktop app first.',
+    },
+    { status: 403 },
+  )
+}
+
+function isH5AccessControlRequest(
+  req: Request,
+  url: URL,
+  context: { clientAddress: string | null },
+): boolean {
+  if (!url.pathname.startsWith('/api/h5-access')) {
+    return false
+  }
+
+  if (url.pathname === '/api/h5-access/verify') {
+    return false
+  }
+
+  return classifyH5Request(req, url, context) !== 'local-trusted'
+}
+
+function originFromUrl(value: string | null): string | null {
+  if (!value) {
+    return null
+  }
+
+  try {
+    return new URL(value).origin
+  } catch {
+    return null
+  }
+}
+
 export function startServer(port = PORT, host = HOST) {
   enableConfigs()
   diagnosticsService.installConsoleCapture()
@@ -79,13 +129,13 @@ export function startServer(port = PORT, host = HOST) {
       : host
 
   /**
-   * Auth is opt-in only. H5/LAN access is currently left open by default so
-   * desktop and browser clients do not get blocked by missing token state.
-   * Explicit opt-in remains available for private deployments.
+   * Explicit deployment auth remains a stronger override than H5-scoped
+   * request gating.
    */
   const forceAuth =
     SERVER_OPTIONS.authRequired ||
     process.env.SERVER_AUTH_REQUIRED === '1'
+  const h5AccessService = new H5AccessService()
 
   const server = Bun.serve<WebSocketData>({
     port,
@@ -96,8 +146,38 @@ export function startServer(port = PORT, host = HOST) {
       await ensurePersistentStorageUpgraded()
       const url = new URL(req.url)
       const origin = req.headers.get('Origin')
-      const cors = await resolveCors(origin, url.origin)
-      const authRequired = forceAuth
+      const clientAddress = server.requestIP(req)?.address ?? null
+      const h5RequestContext = { clientAddress }
+      const h5Settings = await h5AccessService.getSettings()
+      const h5PublicOrigin = originFromUrl(h5Settings.publicBaseUrl)
+      const cors = await resolveCors(origin, url.origin, {
+        h5Enabled: h5Settings.enabled,
+        isOriginAllowed: async (candidateOrigin) =>
+          candidateOrigin === h5PublicOrigin ||
+          await h5AccessService.isOriginAllowed(candidateOrigin),
+      })
+      const authRequired = shouldRequireH5Token({
+        request: req,
+        url,
+        h5Enabled: h5Settings.enabled,
+        context: h5RequestContext,
+      })
+      const h5AccessDisabledBlocked = shouldBlockDisabledH5Access({
+        request: req,
+        url,
+        h5Enabled: h5Settings.enabled,
+        explicitAuthRequired: forceAuth,
+        context: h5RequestContext,
+      })
+      const h5AccessControlBlocked = isH5AccessControlRequest(req, url, h5RequestContext)
+
+      if (h5AccessControlBlocked) {
+        return h5AccessControlRejectedResponse()
+      }
+
+      if (h5AccessDisabledBlocked) {
+        return h5AccessDisabledResponse()
+      }
 
       // Handle CORS preflight
       if (req.method === 'OPTIONS') {
@@ -115,6 +195,11 @@ export function startServer(port = PORT, host = HOST) {
 
         // Enforce authentication when required
         if (authRequired) {
+          const authError = await requireH5Token(req, url.searchParams.get('token'))
+          if (authError) {
+            return withCors(authError, cors)
+          }
+        } else if (forceAuth) {
           const authError = await requireAuth(req, url.searchParams.get('token'))
           if (authError) {
             return withCors(authError, cors)
@@ -142,6 +227,21 @@ export function startServer(port = PORT, host = HOST) {
 
       // Internal SDK WebSocket used by the spawned Claude CLI.
       if (url.pathname.startsWith('/sdk/')) {
+        if (classifyH5Request(req, url, h5RequestContext) !== 'internal-sdk') {
+          return h5AccessControlRejectedResponse()
+        }
+
+        if (cors.rejected) {
+          return corsRejectedResponse(cors)
+        }
+
+        if (forceAuth) {
+          const authError = await requireAuth(req, url.searchParams.get('token'))
+          if (authError) {
+            return withCors(authError, cors)
+          }
+        }
+
         const sessionId = url.pathname.split('/').pop() || ''
         if (!sessionId || !/^[0-9a-zA-Z_-]{1,64}$/.test(sessionId)) {
           return new Response('Invalid session ID', { status: 400 })
@@ -176,6 +276,11 @@ export function startServer(port = PORT, host = HOST) {
 
         // Enforce authentication when required
         if (authRequired) {
+          const authError = await requireH5Token(req)
+          if (authError) {
+            return withCors(authError, cors)
+          }
+        } else if (forceAuth) {
           const authError = await requireAuth(req)
           if (authError) {
             return withCors(authError, cors)
@@ -207,6 +312,11 @@ export function startServer(port = PORT, host = HOST) {
         }
 
         if (authRequired) {
+          const authError = await requireH5Token(req)
+          if (authError) {
+            return withCors(authError, cors)
+          }
+        } else if (forceAuth) {
           const authError = await requireAuth(req)
           if (authError) {
             return withCors(authError, cors)
@@ -242,6 +352,8 @@ export function startServer(port = PORT, host = HOST) {
         )
       }
 
+      // Static H5 shell/assets are non-secret bootstrap content and must load
+      // before the browser can read the QR token; API/proxy/ws stay protected above.
       const staticResponse = await handleStaticH5Request(req, url)
       if (staticResponse) {
         return staticResponse

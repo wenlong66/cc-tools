@@ -13,7 +13,7 @@
 [![License](https://img.shields.io/github/license/NanmiCoder/cc-haha)](https://github.com/NanmiCoder/cc-haha/blob/main/LICENSE)
 [![中文](https://img.shields.io/badge/🇨🇳_中文-当前-blue)](README.md)
 [![English](https://img.shields.io/badge/🇺🇸_English-Available-green)](README.en.md)
-[![Docs](https://img.shields.io/badge/📖_文档站点-Visit-D97757)](https://claudecode-haha.relakkesyang.org)
+[![Docs](https://img.shields.io/badge/📖_文档站点-Visit-FF7A00)](https://claudecode-haha.relakkesyang.org)
 
 </div>
 
@@ -30,7 +30,7 @@ Claude Code Haha 基于 2026-03-31 从 Anthropic npm registry 泄露的 Claude C
 Claude Code Haha 的桌面端把会话、多项目、分支 / Worktree、右侧代码改动、代码 Diff、权限确认、提供商配置和远程入口集中到一个图形化工作台里，适合不想长期停留在终端里的日常开发工作流。
 
 <p align="center">
-  <a href="https://github.com/NanmiCoder/cc-haha/releases"><img src="https://img.shields.io/badge/⬇_下载桌面端-macOS_%7C_Windows-D97757?style=for-the-badge" alt="下载桌面端"></a>
+  <a href="https://github.com/NanmiCoder/cc-haha/releases"><img src="https://img.shields.io/badge/⬇_下载桌面端-macOS_%7C_Windows-FF7A00?style=for-the-badge" alt="下载桌面端"></a>
   &nbsp;
   <a href="docs/desktop/04-installation.md"><img src="https://img.shields.io/badge/📖_安装指南-Guide-gray?style=for-the-badge" alt="安装指南"></a>
 </p>

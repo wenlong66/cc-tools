@@ -34,6 +34,7 @@ type AttachmentRef = {
   path?: string
   data?: string
   mimeType?: string
+  isDirectory?: boolean
 }
 
 type SessionProcess = {
@@ -662,8 +663,20 @@ export class ConversationService {
     this.stopSession(sessionId)
   }
 
+  markSessionsDeleted(sessionIds: string[]): void {
+    for (const sessionId of sessionIds) {
+      this.markSessionDeleted(sessionId)
+    }
+  }
+
   unmarkSessionDeleted(sessionId: string): void {
     this.deletedSessions.delete(sessionId)
+  }
+
+  unmarkSessionsDeleted(sessionIds: string[]): void {
+    for (const sessionId of sessionIds) {
+      this.unmarkSessionDeleted(sessionId)
+    }
   }
 
   getActiveSessions(): string[] {
