@@ -1,0 +1,117 @@
+# Session: 2026-05-13
+
+**Started:** Earlier in this session
+**Last Updated:** End of current session
+**Project:** cc-tools
+**Topic:** 创建并联调 Web 版本，修复后端/测试问题，并补充一键启动与关闭脚本
+
+---
+
+## What We Are Building
+
+本次工作围绕 `cc-tools` 的 Web 版本展开。目标是参考现有 desktop 端，在同级目录下建立一个可在浏览器里运行的 `web/` 前端，并让它能够通过本地后端 API/WebSocket 正常联调。除了把 Web 前端本体跑起来，还需要把后端服务一起启动、跑通测试，并修复联调过程中暴露出的服务启动、测试稳定性、Windows 路径与文件搜索兼容性问题。
+
+后续需求又扩展为“从根目录直接启动 Web”，最终落成了项目根下的 Windows 启动/关闭脚本：一个脚本同时拉起后端和 Web，另一个脚本一键关闭这两个开发窗口。这样下次继续时，不需要重新摸索前后端怎么分别启动。
+
+---
+
+## What WORKED (with evidence)
+
+- **`web/` 前端已建立并可构建** — confirmed by: `bun run build` 通过
+- **Web 测试已稳定通过** — confirmed by: `66/66` test files、`455` tests 通过
+- **本地后端已恢复可启动状态** — confirmed by: 修复 `src/utils/computerUse/preauthorizedConfig.ts` 后，之前的启动错误消失，后续联调可继续
+- **Web 与后端联调已跑通** — confirmed by: 浏览器 smoke / Playwright 联调中页面可加载、关键 API 返回 `200`、可创建并打开会话
+- **Server 回归检查已通过** — confirmed by: `bun run check:server` 通过
+- **ripgrep 缺失环境下的 markdown/agents 加载问题已修复** — confirmed by: 对应 utility / agent regression tests 重跑通过
+- **最终修复经过代码审查无阻塞问题** — confirmed by: code review 结论为 ready / approve，无 CRITICAL 或 HIGH 问题
+
+---
+
+## What Did NOT Work (and why)
+
+- **后端最初直接启动** — failed because: `src/utils/computerUse/preauthorizedConfig.ts` 仍在导入不存在的 `getLegacyManagedComputerUseConfigPath`，报错 `SyntaxError: Export named 'getLegacyManagedComputerUseConfigPath' not found`
+- **Web 测试直接运行的初版配置** — failed because: 缺少 `jsdom` 环境，出现 `window/document/localStorage is not defined`
+- **Testing Library 对话框相关测试** — failed because: DOM 未在测试间清理，报 `Found multiple elements with the role "dialog"`
+- **部分 Vitest 用例** — failed because: 未启用 globals，出现 `expect is not defined`
+- **测试默认并发配置** — failed because: 出现超时与 OOM，需要收敛到 `maxWorkers=1`、`minWorkers=1` 并提高 `testTimeout`
+- **把 Vite 与 Vitest 共用一套配置** — failed because: 触发类型冲突，报 `Plugin<any>[] is not assignable to type PluginOption`
+- **首次浏览器 smoke** — failed because: Web 代理请求后端健康检查时报 `502`，根因是后端未运行
+- **Windows 上的 adapter 权限断言** — failed because: 原测试直接断言 POSIX `0o600` 权限位，在 Windows 文件权限模型下不成立
+- **`conversation-service` 相关服务测试** — failed because: 子进程环境里缺失 `CLAUDE_CODE_ENTRYPOINT`，官方 OAuth token 注入逻辑也不完整，导致多个用例失败
+- **Claude 模型识别测试** — failed because: `WebSearchTool/backend.ts` 原逻辑无法把 `anthropic.cc-tools-opus-4-1` 这类字符串识别为 Claude family
+- **主题词测试** — failed because: 断言写成了 `theme.cc-tools`，会被解释为减法表达式而不是属性访问
+- **无 ripgrep 环境下的 agents/markdown 加载测试** — failed because: `markdownConfigLoader.ts` 只返回 built-ins，没有在 `rg` 缺失时回退到原生文件搜索
+- **第一次放宽 markdown fallback 的实现** — failed because: 它会对任意异常都 fallback，过度吞错；后续收紧为只处理 `ripgrep is not available`
+- **`repositoryLaunchService.ts` 的路径比较初版** — failed because: Windows 与非 Windows 共用 `toLowerCase()` 归一化会带来跨平台路径判断问题，且 `samePath()` 最初也没有统一走规范化路径比较
+- **`/save-session` 首次按全局目录写入** — failed because: 你拒绝了写入 `~/.claude/sessions`，并明确要求改存到项目内的 `/cc-tools/sessions`
+
+---
+
+## What Has NOT Been Tried Yet
+
+- 在当前最终脚本版本下，手动执行 `start-web.cmd`，确认它能同时拉起后端和 Web
+- 在当前最终脚本版本下，手动执行 `stop-web.cmd`，确认它能精确关闭这两个开发窗口
+- 如果后续需要跨平台启动入口，还没有尝试补 `package.json` scripts、`.ps1` 或 `.sh` 版本
+- 如果后续要把关闭脚本做得更保守，还没有尝试把窗口标题改成更独特的命名以进一步降低误杀概率
+
+---
+
+## Current State of Files
+
+| File | Status | Notes |
+| --- | --- | --- |
+| `web/package.json` | ✅ Complete | Web 包脚本与依赖已配置，支持 `dev/build/test/lint` |
+| `web/vite.config.ts` | ✅ Complete | 已配置 React、Tailwind、以及 `/api`、`/health`、`/ws` 到 `127.0.0.1:3456` 的代理 |
+| `web/vitest.config.ts` | ✅ Complete | 使用 `jsdom`、`globals`、单 worker 与更长超时以保证测试稳定 |
+| `web/src/test/setup.ts` | ✅ Complete | 每个测试后执行 `cleanup()` 并清空 `document.body` |
+| `src/utils/computerUse/preauthorizedConfig.ts` | ✅ Complete | 改为使用 `getCCToolsComputerUseConfigPath()`，修复后端启动错误 |
+| `src/server/services/conversationService.ts` | ✅ Complete | 恢复官方模式所需的 `CLAUDE_CODE_ENTRYPOINT` / OAuth token 注入 |
+| `src/server/__tests__/adapters.test.ts` | ✅ Complete | Windows 下不再断言 POSIX 权限位，改为验证文件存在 |
+| `src/tools/WebSearchTool/backend.ts` | ✅ Complete | 扩展 Claude 模型识别逻辑 |
+| `src/utils/__tests__/themeWords.test.ts` | ✅ Complete | 改为断言真实存在的主题字段 |
+| `src/utils/markdownConfigLoader.ts` | ✅ Complete | `rg` 不可用时回退到原生搜索，但不再吞掉其它异常 |
+| `src/server/services/repositoryLaunchService.ts` | ✅ Complete | 路径归一化改为跨平台安全实现，`samePath()` 统一走规范化比较 |
+| `scripts/pr/run-server-tests.ts` | ✅ Complete | server tests 改用 `bun test --isolate`，降低全局状态串扰 |
+| `src/server/__tests__/haha-oauth-api.test.ts` | ✅ Complete | 更新为匹配当前 OAuth disabled 行为 |
+| `src/server/__tests__/haha-openai-oauth-api.test.ts` | ✅ Complete | 更新为匹配当前 OAuth disabled 行为 |
+| `src/server/__tests__/sessions.test.ts` | ✅ Complete | 已适配路径归一化与相关行为变更 |
+| `src/server/__tests__/conversations.test.ts` | ✅ Complete | 为 server gate 稳定通过做了相应适配 |
+| `start-web.cmd` | ✅ Complete | 项目根一键启动脚本：新开后端窗口并在当前窗口启动 Web |
+| `stop-web.cmd` | ✅ Complete | 项目根一键关闭脚本：按固定窗口标题关闭 Web/后端开发窗口 |
+
+---
+
+## Decisions Made
+
+- **Web 版本直接作为同级前端应用实现** — reason: 用户明确要求参考 desktop 在同级创建 web 版本，而不是继续绑定 Tauri / desktop runtime
+- **Web 开发态通过 Vite dev proxy 访问后端** — reason: 这样最贴近现有本地联调方式，避免在前端硬编码不同运行时的服务地址
+- **测试稳定性优先于并发速度** — reason: `jsdom + globals + cleanup + 单 worker + 更长超时` 能稳定消除环境与串扰类问题
+- **markdown 文件搜索只在 `rg` 真缺失时回退到原生实现** — reason: 这样既解决当前环境兼容性问题，也避免把真实错误静默吞掉
+- **Windows 路径归一化只在 `win32` 上 lower-case** — reason: 非 Windows 文件系统可能大小写敏感，不能一刀切忽略大小写
+- **根目录提供 Windows 启动/关闭脚本** — reason: 用户希望下次直接一键拉起与关闭前后端，减少重复手工操作
+- **关闭脚本通过固定窗口标题匹配** — reason: 对当前本地开发场景足够简单直接，不需要额外进程记录文件或 PID 管理
+
+---
+
+## Blockers & Open Questions
+
+- `start-web.cmd` / `stop-web.cmd` 当前已通过代码审查，但本轮最后没有再手动执行一遍做最终人工验证
+- `stop-web.cmd` 依赖窗口标题匹配；虽然当前标题足够明确，但如果未来有同名窗口，仍有理论上的误杀可能
+- 如果后续希望兼容 PowerShell、Git Bash 或 macOS/Linux，当前还没有统一的跨平台启动/关闭方案
+
+---
+
+## Exact Next Step
+
+在项目根目录手动运行一次 `start-web.cmd`，确认后端窗口与 Web dev server 都能正常起来；然后运行一次 `stop-web.cmd`，确认这两个开发窗口都能被正确关闭。如果两者都正常，再决定是否需要补充 cross-platform 启动方案。
+
+---
+
+## Environment & Setup Notes
+
+- Web 开发目录：`web/`
+- 后端启动命令：`SERVER_PORT=3456 bun run src/server/index.ts`
+- Web 启动命令：`cd web && bun run dev`
+- Web 开发代理目标：`127.0.0.1:3456`
+- 项目根快捷脚本：`start-web.cmd`、`stop-web.cmd`
+- 如果要在 Web 里真正发起 Claude 对话，机器本地仍需要已有登录态或 provider 配置；否则会出现未登录 / 未配置 provider 的提示

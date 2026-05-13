@@ -17,10 +17,14 @@
 
 </div>
 
-CC-Tools 基于 2026-03-31 从 Anthropic npm registry 泄露的 Claude Code 源码修复而来，现在主要是一个**桌面端 Claude Code 工作台**：把会话、多项目、分支 / Worktree、右侧代码改动、代码 Diff、权限审批、模型提供商、Computer Use、H5 远程访问、IM 接入和定时任务集中到一个 macOS / Windows APP 里。
+CC-Tools 是一个面向 Claude Code 的 **桌面端 + CLI + Web 工作台**。项目基于 [NanmiCoder/cc-haha](https://github.com/NanmiCoder/cc-haha) 修改
 
 <p align="center">
-  <a href="#桌面端预览">桌面端预览</a> · <a href="#安装桌面端">安装桌面端</a> · <a href="#桌面端亮点">桌面端亮点</a> · <a href="#赞助与合作">赞助与合作</a> · <a href="#更多文档">更多文档</a>
+  <a href="#桌面端预览">桌面端预览</a> ·
+  <a href="#安装桌面端">安装桌面端</a> ·
+  <a href="#配置目录说明">配置目录说明</a> ·
+  <a href="#web-端说明">Web 端说明</a> ·
+  <a href="#更多文档">更多文档</a>
 </p>
 
 ---
@@ -87,6 +91,54 @@ cp .env.example .env
 
 ---
 
+
+## 配置目录说明
+
+CC-Tools 运行时默认使用 **`.cc-tools` 目录**，不是直接读取 Claude 官方的 `~/.claude` 配置目录。
+
+常见配置位置：
+
+- **用户级配置**：`~/.cc-tools/`
+- **项目级配置**：`项目根目录/.cc-tools/`
+- **常见文件**：
+  - `~/.cc-tools/settings.json`
+  - `~/.cc-tools/CLAUDE.md`
+  - `~/.cc-tools/agents/`
+  - `~/.cc-tools/skills/`
+  - `项目根目录/.cc-tools/settings.json`
+  - `项目根目录/.cc-tools/settings.local.json`
+  - `项目根目录/.cc-tools/agents/`
+  - `项目根目录/.cc-tools/skills/`
+
+如果你需要自定义全局配置根目录，也可以通过环境变量 `CLAUDE_CONFIG_DIR` 覆盖默认位置。
+
+---
+
+## Web 端说明
+
+仓库中的 [web/](web/) 是一个独立的 Web 前端，主要用于把会话、设置、Provider、MCP、Skills 等能力以浏览器界面展示出来。
+
+简单理解：
+
+- **桌面端**：更适合本机长期使用，能力最完整。
+- **Web 端**：更适合做浏览器访问、H5 页面承载和后续远程管理扩展。
+
+本地开发可直接使用：
+
+```bash
+# 启动项目服务端
+SERVER_PORT=3456 bun run src/server/index.ts
+
+# 启动 Web 前端
+cd web
+bun install
+bun run dev
+```
+
+如果你只是普通使用者，优先推荐直接下载桌面端；如果你想二次开发浏览器界面，再关注 `web/` 目录即可。
+
+---
+
 ## 更多文档
 
 | 文档 | 说明 |
@@ -107,71 +159,6 @@ cp .env.example .env
 
 ---
 
-## 赞助与合作
-
-本项目由个人利用业余时间维护，欢迎企业或个人赞助支持持续开发，也可洽谈定制、集成或商务合作。
-
-<table>
-  <thead>
-    <tr>
-      <th width="220">赞助商</th>
-      <th align="left">介绍</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center" valign="middle">
-        <a href="https://jiekou.ai/referral?invited_code=OBNU3K">
-          <img src="docs/images/sponsors/jiekou-logo.svg" width="72" alt="接口AI"><br>
-          <strong>接口AI</strong>
-        </a>
-      </td>
-      <td valign="middle">
-        感谢 <a href="https://jiekou.ai/referral?invited_code=OBNU3K">接口AI</a> 赞助本项目！接口AI 提供官方资源直供与稳定高性能 API 体验，订阅包价格为官方 8 折；使用 <a href="https://jiekou.ai/referral?invited_code=OBNU3K">专属链接</a> 注册并绑定 GitHub，可领取 3 美元优惠券。
-      </td>
-    </tr>
-    <tr>
-      <td align="center" valign="middle">
-        <a href="https://www.shengsuanyun.com/?from=CH_LEJ88KWR">
-          <img src="docs/images/sponsors/shengsuanyun-logo.svg" width="180" alt="胜算云">
-        </a>
-      </td>
-      <td valign="middle">
-        感谢 <a href="https://www.shengsuanyun.com/?from=CH_LEJ88KWR">胜算云</a> 赞助本项目！胜算云是面向 AI Native Teams 的工业级 AI 任务并行执行平台，聚合 Claude、ChatGPT、Gemini 等海内外 LLM 及图片、视频多媒体模型算力；官方直连、非逆向，平台 SLA 可用性达 99.7%，可查看 <a href="https://watch.shengsuanyun.com/status/shengsuanyun">服务状态</a>。平台支持企业专属网关、成本与权限管控、智能路由、安全防护和 BYOK，按量与 tokens plan（即将上线）计费并可开票；使用 <a href="https://www.shengsuanyun.com/?from=CH_LEJ88KWR">专属链接</a> 注册可获 10 元模力及首充 10% 赠送。
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-📧 **联系邮箱**：relakkes@gmail.com
-
----
-
-## ☕ 请作者喝杯咖啡
-
-如果这个项目对您有帮助，欢迎打赏支持，您的每一份支持都是我持续更新的动力 ❤️
-
-<table>
-<tr>
-<td align="center" width="33%">
-<img src="docs/images/donate/wechat_pay.jpeg" width="250" alt="微信赞赏"><br>
-<b>微信赞赏</b>
-</td>
-<td align="center" width="33%">
-<img src="docs/images/donate/zfb_pay.png" width="250" alt="支付宝"><br>
-<b>支付宝</b>
-</td>
-<td align="center" width="33%">
-<a href="https://buymeacoffee.com/relakkes" target="_blank">
-<img src="docs/images/donate/bmc_button.png" width="250" alt="Buy Me a Coffee">
-</a><br>
-<b>Buy Me a Coffee</b>
-</td>
-</tr>
-</table>
-
----
-
 ## 技术栈
 
 | 类别 | 技术 |
@@ -179,6 +166,7 @@ cp .env.example .env
 | 语言 | TypeScript |
 | 桌面 APP | Tauri 2 |
 | 桌面 UI | React + Vite |
+| Web UI | React + Vite |
 | 本地运行时 | [Bun](https://bun.sh) |
 | 终端 UI | React + [Ink](https://github.com/vadimdemedes/ink) |
 | CLI 解析 | Commander.js |
@@ -192,23 +180,3 @@ cp .env.example .env
 - [React](https://github.com/facebook/react)：前端工程与组件化 UI 生态。
 - [Tauri](https://github.com/tauri-apps/tauri)：跨端桌面应用能力与工程实践。
 - [cc-switch](https://github.com/farion1231/cc-switch)：模型供应商配置能力参考。
-
----
-
-## ⭐ Star 趋势图
-
-如果这个项目对您有帮助，请给个 ⭐ Star 支持一下，让更多的人看到 CC-Tools！
-
-<a href="https://www.star-history.com/#NanmiCoder/cc-tools&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=NanmiCoder/cc-tools&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=NanmiCoder/cc-tools&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=NanmiCoder/cc-tools&type=Date" />
-  </picture>
-</a>
-
----
-
-## Disclaimer
-
-本仓库基于 2026-03-31 从 Anthropic npm registry 泄露的 Claude Code 源码。所有原始源码版权归 [Anthropic](https://www.anthropic.com) 所有。仅供学习和研究用途。
