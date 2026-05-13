@@ -75,3 +75,4 @@ runtime/__pycache__
 
 # Codex logs
 .codex-logs/
+.claude/settings.local.json
