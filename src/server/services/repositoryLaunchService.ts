@@ -91,7 +91,7 @@ export type RepositorySessionLaunchState = {
 
 function samePath(left: string | null | undefined, right: string | null | undefined): boolean {
   if (!left || !right) return false
-  return path.resolve(left) === path.resolve(right)
+  return normalizeFilesystemPath(left) === normalizeFilesystemPath(right)
 }
 
 export function isMaterializedWorktreeLaunch(
@@ -200,6 +200,11 @@ function normalizeRemoteBranch(ref: string): { name: string; remoteRef: string }
     name: remote === 'origin' ? name : ref,
     remoteRef: ref,
   }
+}
+
+function normalizeFilesystemPath(targetPath: string): string {
+  const normalized = path.resolve(targetPath).replace(/[\\/]+/g, '/').replace(/\/+$/, '')
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
 function parseWorktreeList(stdout: string): GitWorktreeRecord[] {
@@ -354,11 +359,17 @@ export async function getRepositoryContext(workDir: string): Promise<RepositoryC
 
     const currentBranch = branchResult.stdout.trim() || null
     const worktreeRecords = worktreeResult.code === 0 ? parseWorktreeList(worktreeResult.stdout) : []
-    const worktrees = worktreeRecords.map((worktree) => ({
-      path: worktree.path,
-      branch: worktree.branch,
-      current: absWorkDir === worktree.path || absWorkDir.startsWith(`${worktree.path}${path.sep}`),
-    }))
+    const normalizedWorkDir = normalizeFilesystemPath(absWorkDir)
+    const worktrees = worktreeRecords.map((worktree) => {
+      const normalizedWorktreePath = normalizeFilesystemPath(worktree.path)
+      return {
+        path: worktree.path,
+        branch: worktree.branch,
+        current:
+          normalizedWorkDir === normalizedWorktreePath ||
+          normalizedWorkDir.startsWith(`${normalizedWorktreePath}/`),
+      }
+    })
 
     return {
       state: 'ok',

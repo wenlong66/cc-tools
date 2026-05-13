@@ -1515,8 +1515,12 @@ describe('Sessions API', () => {
     expect(body.currentBranch).toBe('main')
     expect(body.branches.some((branch) => branch.name === 'main' && branch.current)).toBe(true)
     expect(body.branches.some((branch) => branch.name === 'feature/rail' && branch.local)).toBe(true)
-    const realWorkDir = await fs.realpath(workDir)
-    expect(body.worktrees.some((worktree) => worktree.path === realWorkDir && worktree.current)).toBe(true)
+    const realWorkDir = (await fs.realpath(workDir)).replaceAll('\\', '/').toLowerCase()
+    expect(
+      body.worktrees.some(
+        (worktree) => worktree.path.replaceAll('\\', '/').toLowerCase() === realWorkDir && worktree.current,
+      ),
+    ).toBe(true)
   })
 
   it('GET /api/sessions/recent-projects should keep pending repository launches on the source project', async () => {

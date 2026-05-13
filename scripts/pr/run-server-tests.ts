@@ -44,7 +44,7 @@ if (testFiles.length === 0) {
   process.exit(0)
 }
 
-const proc = Bun.spawn(['bun', 'test', ...testFiles], {
+const proc = Bun.spawn(['bun', 'test', '--isolate', ...testFiles], {
   cwd: root,
   stdout: 'inherit',
   stderr: 'inherit',

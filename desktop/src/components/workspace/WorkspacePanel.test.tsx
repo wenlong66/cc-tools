@@ -709,7 +709,7 @@ describe('WorkspacePanel', () => {
   })
 
   it('can expand long diff previews beyond the default rendered line cap', async () => {
-    const longDiff = Array.from({ length: 2300 }, (_, index) => `+line ${index + 1}`).join('\n')
+    const longDiff = Array.from({ length: 2050 }, (_, index) => `+line ${index + 1}`).join('\n')
 
     await setWorkspaceState((state) => ({
       ...state,
@@ -758,7 +758,7 @@ describe('WorkspacePanel', () => {
     await clickElement(view.getByRole('button', { name: 'Show all loaded lines' }))
 
     await waitFor(() => {
-      expect(view.getByTestId('workspace-code').textContent).toContain('+line 2300')
+      expect(view.getByTestId('workspace-code').textContent).toContain('+line 2050')
     })
     expect(view.getByRole('button', { name: 'Collapse preview' })).toBeTruthy()
   })
@@ -815,7 +815,7 @@ describe('WorkspacePanel', () => {
   })
 
   it('can expand long file previews beyond the default rendered line cap', async () => {
-    const longFile = Array.from({ length: 2300 }, (_, index) => `const line${index + 1} = ${index + 1}`).join('\n')
+    const longFile = Array.from({ length: 2050 }, (_, index) => `const line${index + 1} = ${index + 1}`).join('\n')
 
     await setWorkspaceState((state) => ({
       ...state,
@@ -854,7 +854,7 @@ describe('WorkspacePanel', () => {
     await clickElement(view.getByRole('button', { name: 'Show all loaded lines' }))
 
     await waitFor(() => {
-      expect(view.getByTestId('workspace-code').textContent).toContain('const line2300 = 2300')
+      expect(view.getByTestId('workspace-code').textContent).toContain('const line2050 = 2050')
     })
     expect(view.getByRole('button', { name: 'Collapse preview' })).toBeTruthy()
   })

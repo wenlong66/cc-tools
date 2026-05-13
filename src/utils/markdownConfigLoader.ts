@@ -566,12 +566,23 @@ async function loadMarkdownFiles(dir: string): Promise<
           dir,
           signal,
         )
+    if (!useNative && files.length === 0) {
+      files = await findMarkdownFilesNative(dir, signal)
+    }
   } catch (e: unknown) {
-    // Handle missing/inaccessible dir directly instead of pre-checking
-    // existence (TOCTOU). findMarkdownFilesNative already catches internally;
-    // ripGrep rejects on inaccessible target paths.
-    if (isFsInaccessible(e)) return []
-    throw e
+    if (
+      !useNative &&
+      e instanceof Error &&
+      e.message.includes('ripgrep is not available')
+    ) {
+      files = await findMarkdownFilesNative(dir, AbortSignal.timeout(3000))
+    } else {
+      // Handle missing/inaccessible dir directly instead of pre-checking
+      // existence (TOCTOU). findMarkdownFilesNative already catches internally;
+      // ripGrep rejects on inaccessible target paths.
+      if (isFsInaccessible(e)) return []
+      throw e
+    }
   }
 
   const results = await Promise.all(

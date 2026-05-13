@@ -12,6 +12,7 @@ import * as path from 'node:path'
 import { ProviderService } from './providerService.js'
 import { sessionService } from './sessionService.js'
 import { diagnosticsService } from './diagnosticsService.js'
+import { hahaOAuthService } from './hahaOAuthService.js'
 import {
   isMaterializedWorktreeLaunch,
   prepareSessionWorkspace,
@@ -855,7 +856,8 @@ export class ConversationService {
 
     const cleanEnv = { ...process.env }
     delete cleanEnv.CLAUDE_CODE_OAUTH_TOKEN
-    if (this.shouldStripInheritedProviderEnv(options?.providerId)) {
+    const shouldStripProviderEnv = this.shouldStripInheritedProviderEnv(options?.providerId)
+    if (shouldStripProviderEnv) {
       for (const key of PROVIDER_ENV_KEYS) {
         delete cleanEnv[key]
       }
@@ -878,6 +880,13 @@ export class ConversationService {
     if (explicitProviderEnv && options?.model?.trim()) {
       explicitProviderEnv.ANTHROPIC_MODEL = options.model.trim()
     }
+
+    const shouldUseOfficialAuth =
+      !explicitProviderEnv &&
+      (options?.providerId === null || !shouldStripProviderEnv)
+    const officialAuthToken = shouldUseOfficialAuth
+      ? await hahaOAuthService.ensureFreshAccessToken()
+      : null
 
     const cliDiagnosticsPath = diagnosticsService.getCliDiagnosticsPath()
     try {
@@ -909,6 +918,12 @@ export class ConversationService {
       // should come from Desktop-managed config or inherited launch env, not
       // be reintroduced from the repo's .env file.
       CC_TOOLS_SKIP_DOTENV: '1',
+      ...(shouldUseOfficialAuth
+        ? { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' }
+        : {}),
+      ...(officialAuthToken
+        ? { CLAUDE_CODE_OAUTH_TOKEN: officialAuthToken }
+        : {}),
       ...(explicitProviderEnv
         ? { CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: '1' }
         : {}),

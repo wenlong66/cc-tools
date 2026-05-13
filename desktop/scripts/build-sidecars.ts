@@ -1,8 +1,9 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const desktopRoot = path.resolve(import.meta.dir, '..')
 const repoRoot = path.resolve(desktopRoot, '..')
+const adaptersRoot = path.join(repoRoot, 'adapters')
 const binariesDir = path.join(desktopRoot, 'src-tauri', 'binaries')
 
 const targetTriple =
@@ -11,6 +12,8 @@ const targetTriple =
   (await detectHostTriple())
 
 const bunTarget = mapTargetTripleToBun(targetTriple)
+
+await ensureAdapterDependenciesInstalled()
 
 // 编译前先扫一遍 src/ 把所有缺失的 ant-internal 模块在磁盘上 stub 出来。
 // 见 desktop/scripts/scan-missing-imports.ts。
@@ -37,6 +40,48 @@ await compileExecutable({
 })
 
 console.log(`[build-sidecars] Built desktop sidecar for ${targetTriple} (${bunTarget})`)
+
+async function ensureAdapterDependenciesInstalled() {
+  const installMarkerPath = path.join(adaptersRoot, 'node_modules', '.cc-tools-install-stamp')
+  const requiredPackagePaths = [
+    path.join(adaptersRoot, 'node_modules', 'grammy', 'package.json'),
+    path.join(adaptersRoot, 'node_modules', 'dingtalk-stream', 'package.json'),
+    path.join(adaptersRoot, 'node_modules', '@larksuiteoapi', 'node-sdk', 'package.json'),
+    path.join(adaptersRoot, 'node_modules', 'ws', 'package.json'),
+  ]
+
+  const installMarkerMtime = await getMtimeMs(installMarkerPath)
+  const packageManifestMtime = await getMtimeMs(path.join(adaptersRoot, 'package.json'))
+  const lockfileMtime = await getMtimeMs(path.join(adaptersRoot, 'bun.lock'))
+  const newestManifestMtime = Math.max(packageManifestMtime, lockfileMtime)
+  const hasRequiredPackages = await Promise.all(requiredPackagePaths.map((packagePath) => getMtimeMs(packagePath)))
+
+  if (installMarkerMtime >= newestManifestMtime && hasRequiredPackages.every((mtime) => mtime > 0)) {
+    return
+  }
+
+  console.log('[build-sidecars] ensuring adapters dependencies...')
+  const installProc = Bun.spawn(['bun', 'install', '--frozen-lockfile'], {
+    cwd: adaptersRoot,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  const installExit = await installProc.exited
+  if (installExit !== 0) {
+    throw new Error(`[build-sidecars] adapters bun install failed (exit ${installExit})`)
+  }
+
+  await writeFile(installMarkerPath, `${Date.now()}\n`)
+}
+
+async function getMtimeMs(filePath: string) {
+  try {
+    const fileStat = await stat(filePath)
+    return fileStat.mtimeMs
+  } catch {
+    return 0
+  }
+}
 
 async function detectHostTriple() {
   const proc = Bun.spawn(['rustc', '-vV'], {

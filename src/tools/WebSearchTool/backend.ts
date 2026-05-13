@@ -42,7 +42,9 @@ export function isLikelyClaudeModel(model: string | undefined): boolean {
     return false
   }
 
-  return /(^|[/:._-])claude([/:._-]|$)/.test(model.toLowerCase())
+  const normalized = model.toLowerCase()
+  return /(^|[/:._-])claude([/:._-]|$)/.test(normalized) ||
+    /^anthropic[/:._-].*([/:._-]|^)(haiku|sonnet|opus)([/:._-]|$)/.test(normalized)
 }
 
 export function getConfiguredWebSearchSettings(

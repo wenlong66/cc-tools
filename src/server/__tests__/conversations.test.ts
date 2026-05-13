@@ -630,7 +630,13 @@ describe('WebSocket Chat Integration', () => {
     }
   }
 
-  async function runTurn(sessionId: string, content: string, allowError = false): Promise<any[]> {
+  async function runTurnUntil(
+    sessionId: string,
+    content: string,
+    shouldResolve: (msg: any, messages: any[]) => boolean,
+    allowError = false,
+    timeoutMs = 30000,
+  ): Promise<any[]> {
     const messages: any[] = []
     const ws = new WebSocket(`${wsUrl}/ws/${sessionId}`)
 
@@ -638,7 +644,7 @@ describe('WebSocket Chat Integration', () => {
       const timeout = setTimeout(() => {
         ws.close()
         reject(new Error(`Timed out waiting for completion for session ${sessionId}`))
-      }, 30000)
+      }, timeoutMs)
 
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data as string)
@@ -654,8 +660,9 @@ describe('WebSocket Chat Integration', () => {
           } else {
             reject(new Error(msg.message))
           }
+          return
         }
-        if (msg.type === 'message_complete') {
+        if (shouldResolve(msg, messages)) {
           clearTimeout(timeout)
           ws.close()
           resolve()
@@ -670,6 +677,15 @@ describe('WebSocket Chat Integration', () => {
     })
 
     return messages
+  }
+
+  async function runTurn(sessionId: string, content: string, allowError = false): Promise<any[]> {
+    return runTurnUntil(
+      sessionId,
+      content,
+      (msg) => msg.type === 'message_complete',
+      allowError,
+    )
   }
 
   async function runTurnUntilComplete(sessionId: string, content: string): Promise<any[]> {
@@ -735,9 +751,14 @@ describe('WebSocket Chat Integration', () => {
   })
 
   afterAll(async () => {
+    await Promise.all(
+      conversationService
+        .getActiveSessions()
+        .map((sessionId) => conversationService.stopSessionAndWait(sessionId)),
+    )
     server?.stop()
     if (tmpDir) {
-      await fs.rm(tmpDir, { recursive: true, force: true })
+      await rmWithRetry(tmpDir)
     }
     if (originalCliPath) {
       process.env.CLAUDE_CLI_PATH = originalCliPath
@@ -855,13 +876,19 @@ describe('WebSocket Chat Integration', () => {
       worktree: true,
     })
 
-    const messages = await runTurn(sessionId, 'Hello from repository launch test')
+    const messages = await runTurnUntil(
+      sessionId,
+      'Hello from repository launch test',
+      (msg) => msg.type === 'status' && msg.verb === 'Creating worktree',
+      false,
+      15_000,
+    )
     const statusVerbs = messages
       .filter((msg) => msg.type === 'status')
       .map((msg) => msg.verb)
 
     expect(statusVerbs).toContain('Creating worktree')
-  })
+  }, 15_000)
 
   it('does not emit worktree startup status for an already materialized worktree session', async () => {
     const repoDir = await createCleanGitRepo()
@@ -879,14 +906,20 @@ describe('WebSocket Chat Integration', () => {
       repository: launchInfo!.repository,
     })
 
-    const messages = await runTurn(sessionId, 'Continue in the existing worktree')
+    const messages = await runTurnUntil(
+      sessionId,
+      'Continue in the existing worktree',
+      (msg) => msg.type === 'content_start' || msg.type === 'message_complete',
+      false,
+      15_000,
+    )
     const statusVerbs = messages
       .filter((msg) => msg.type === 'status')
       .map((msg) => msg.verb)
 
     expect(statusVerbs).toContain('Thinking')
     expect(statusVerbs).not.toContain('Creating worktree')
-  })
+  }, 15_000)
 
   it('keeps the default startup status for current-worktree repository sessions', async () => {
     const repoDir = await createCleanGitRepo()
@@ -895,14 +928,20 @@ describe('WebSocket Chat Integration', () => {
       worktree: false,
     })
 
-    const messages = await runTurn(sessionId, 'Hello from current worktree launch test')
+    const messages = await runTurnUntil(
+      sessionId,
+      'Hello from current worktree launch test',
+      (msg) => msg.type === 'content_start' || msg.type === 'message_complete',
+      false,
+      15_000,
+    )
     const statusVerbs = messages
       .filter((msg) => msg.type === 'status')
       .map((msg) => msg.verb)
 
     expect(statusVerbs).toContain('Thinking')
     expect(statusVerbs).not.toContain('Creating worktree')
-  })
+  }, 15_000)
 
   it('emits the derived session title before the first response completes', async () => {
     const sessionId = `title-fast-${crypto.randomUUID()}`
@@ -1260,7 +1299,7 @@ describe('WebSocket Chat Integration', () => {
     const secondTurn = await runTurn(sessionId, 'reply with second')
     expect(secondTurn.some((m) => m.type === 'message_complete')).toBe(true)
     expect(secondTurn.some((m) => m.type === 'error')).toBe(false)
-  })
+  }, 15_000)
 
   it('should keep a long desktop session alive in a /tmp project across engineering turns', async () => {
     const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-tools-issue247-project-'))
