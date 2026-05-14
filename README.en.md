@@ -6,11 +6,6 @@
 
 <div align="center">
 
-[![GitHub Stars](https://img.shields.io/github/stars/NanmiCoder/cc-tools?style=social)](https://github.com/wenlong66/cc-tools/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/NanmiCoder/cc-tools?style=social)](https://github.com/wenlong66/cc-tools/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/NanmiCoder/cc-tools)](https://github.com/wenlong66/cc-tools/issues)
-[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/NanmiCoder/cc-tools)](https://github.com/wenlong66/cc-tools/pulls)
-[![License](https://img.shields.io/github/license/NanmiCoder/cc-tools)](https://github.com/wenlong66/cc-tools/blob/main/LICENSE)
 [![中文](https://img.shields.io/badge/🇨🇳_中文-Available-green)](README.md)
 [![English](https://img.shields.io/badge/🇺🇸_English-当前-blue)](README.en.md)
 [![Docs](https://img.shields.io/badge/📖_Documentation-Visit-D97757)](https://claudecode-haha.relakkesyang.org)

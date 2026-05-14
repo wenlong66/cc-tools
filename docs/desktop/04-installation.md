@@ -18,7 +18,7 @@
 2. 首次打开如果提示**"已损坏，无法打开"**，在终端执行：
 
 ```bash
-xattr -cr /Applications/Claude\ Code\ Haha.app
+xattr -cr /Applications/CC-Tools.app
 ```
 
 > 由于应用暂未进行 Apple 开发者签名，macOS 会阻止首次运行，执行上述命令移除隔离属性后即可正常使用。

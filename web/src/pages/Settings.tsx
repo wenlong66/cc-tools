@@ -2661,7 +2661,7 @@ function AboutSettings() {
         >
           <img src="/icons/github.svg" alt="GitHub" className="w-5 h-5 opacity-70" />
           <div className="flex-1 text-left">
-            <div className="text-sm font-medium text-[var(--color-text-primary)]">NanmiCoder/cc-tools</div>
+            <div className="text-sm font-medium text-[var(--color-text-primary)]">wenlong66/cc-tools</div>
             <div className="text-xs text-[var(--color-text-tertiary)]">{t('settings.about.starHint')}</div>
           </div>
         </button>
