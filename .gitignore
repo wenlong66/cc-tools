@@ -40,6 +40,7 @@ desktop/package-lock.json
 desktop/brand-assets/
 
 # Claude local config & auto-generated
+.claude/
 .cc-tools/
 
 # Superpowers plans & specs (local only)
@@ -75,4 +76,3 @@ runtime/__pycache__
 
 # Codex logs
 .codex-logs/
-.claude/settings.local.json
