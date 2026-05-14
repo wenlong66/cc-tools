@@ -2,16 +2,14 @@ import { forwardRef, useRef, useState, useEffect, useCallback } from 'react'
 import {
   SCHEDULED_TAB_ID,
   SETTINGS_TAB_ID,
-  TERMINAL_TAB_PREFIX,
   useTabStore,
   type Tab,
 } from '../../stores/tabStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useWorkspacePanelStore } from '../../stores/workspacePanelStore'
-import { useTerminalPanelStore } from '../../stores/terminalPanelStore'
 import { useTranslation } from '../../i18n'
 import { WindowControls, showWindowControls } from './WindowControls'
-import { Folder, FolderOpen, SquareTerminal } from 'lucide-react'
+import { Folder, FolderOpen } from 'lucide-react'
 
 const TAB_WIDTH = 180
 const DRAG_START_THRESHOLD = 4
@@ -27,9 +25,7 @@ function isSessionTab(tab: Tab | null) {
 
 function isSessionTabId(tabId: string | null) {
   if (!tabId) return false
-  return tabId !== SETTINGS_TAB_ID &&
-    tabId !== SCHEDULED_TAB_ID &&
-    !tabId.startsWith(TERMINAL_TAB_PREFIX)
+  return tabId !== SETTINGS_TAB_ID && tabId !== SCHEDULED_TAB_ID
 }
 
 export function TabBar() {
@@ -41,9 +37,6 @@ export function TabBar() {
   const activeTab = tabs.find((tab) => tab.sessionId === activeTabId) ?? null
   const isActiveSessionTab = isSessionTab(activeTab) || isSessionTabId(activeTabId)
   const isWorkspacePanelOpen = useWorkspacePanelStore((state) =>
-    activeTabId && isActiveSessionTab ? state.isPanelOpen(activeTabId) : false,
-  )
-  const isTerminalPanelOpen = useTerminalPanelStore((state) =>
     activeTabId && isActiveSessionTab ? state.isPanelOpen(activeTabId) : false,
   )
 
@@ -124,7 +117,6 @@ export function TabBar() {
   const closeTabWithCleanup = useCallback((tab: Tab) => {
     if (isSessionTab(tab)) {
       useWorkspacePanelStore.getState().clearSession(tab.sessionId)
-      useTerminalPanelStore.getState().clearSession(tab.sessionId)
     }
     closeTab(tab.sessionId)
   }, [closeTab])
@@ -319,18 +311,6 @@ export function TabBar() {
       </div>
 
       <div className="flex shrink-0 items-center gap-1 border-l border-[var(--color-border)]/70 px-2">
-        <ToolbarIconButton
-          icon={<SquareTerminal size={17} strokeWidth={1.9} />}
-          label={t('tabs.openTerminal')}
-          onClick={() => {
-            if (activeTabId && isActiveSessionTab) {
-              useTerminalPanelStore.getState().togglePanel(activeTabId)
-              return
-            }
-            useTabStore.getState().openTerminalTab()
-          }}
-          active={isTerminalPanelOpen}
-        />
         {isActiveSessionTab && activeTabId && (
           <ToolbarIconButton
             icon={isWorkspacePanelOpen ? <FolderOpen size={18} strokeWidth={1.9} /> : <Folder size={18} strokeWidth={1.9} />}
@@ -482,9 +462,6 @@ const TabItem = forwardRef<HTMLDivElement, {
       )}
       {tab.type === 'scheduled' && (
         <span className="material-symbols-outlined text-[14px] flex-shrink-0 text-[var(--color-text-tertiary)]">schedule</span>
-      )}
-      {tab.type === 'terminal' && (
-        <span className="material-symbols-outlined text-[14px] flex-shrink-0 text-[var(--color-text-tertiary)]">terminal</span>
       )}
 
       <span className={`flex-1 truncate text-xs ${isActive ? 'text-[var(--color-text-primary)] font-medium' : 'text-[var(--color-text-secondary)]'}`}>

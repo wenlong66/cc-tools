@@ -1236,7 +1236,7 @@ describe('chatStore history mapping', () => {
     expect(refreshTasksMock).toHaveBeenNthCalledWith(2, 'session-b')
   })
 
-  it('tracks Computer Use approval requests separately from generic tool permissions', () => {
+  it('auto-denies Computer Use approval requests in the web client', () => {
     useChatStore.setState({
       sessions: {
         [TEST_SESSION_ID]: {
@@ -1283,25 +1283,35 @@ describe('chatStore history mapping', () => {
       },
     })
 
-    expect(
-      useChatStore.getState().sessions[TEST_SESSION_ID]?.pendingComputerUsePermission,
-    ).toMatchObject({
+    expect(sendMock).toHaveBeenCalledWith(TEST_SESSION_ID, {
+      type: 'computer_use_permission_response',
       requestId: 'cu-1',
-      request: {
-        reason: 'Open Finder and inspect a file',
+      response: {
+        granted: [],
+        denied: [
+          {
+            bundleId: 'com.apple.finder',
+            reason: 'user_denied',
+          },
+        ],
+        flags: {
+          clipboardRead: false,
+          clipboardWrite: false,
+          systemKeyCombos: false,
+        },
+        userConsented: false,
       },
     })
     expect(
+      useChatStore.getState().sessions[TEST_SESSION_ID]?.pendingComputerUsePermission,
+    ).toBeNull()
+    expect(
+      useChatStore.getState().sessions[TEST_SESSION_ID]?.pendingPermission,
+    ).toBeNull()
+    expect(
       useChatStore.getState().sessions[TEST_SESSION_ID]?.chatState,
-    ).toBe('permission_pending')
-    expect(notifyDesktopMock).toHaveBeenCalledWith({
-      dedupeKey: 'computer-use-permission:cu-1',
-      cooldownScope: 'permission-prompt',
-      requestAttention: true,
-      title: 'CC-Tools 需要你的确认',
-      body: 'Open Finder and inspect a file',
-      target: { type: 'session', sessionId: TEST_SESSION_ID },
-    })
+    ).toBe('idle')
+    expect(notifyDesktopMock).not.toHaveBeenCalled()
   })
 
   it('keeps delayed text blocks from one streamed assistant turn in a single message', () => {

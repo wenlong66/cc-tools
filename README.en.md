@@ -17,17 +17,21 @@
 
 </div>
 
-A Claude Code build repaired from the source leaked from Anthropic's npm registry on 2026-03-31. CC-Tools is now primarily a **desktop Claude Code workspace** for macOS and Windows: sessions, projects, branch / Worktree launch, right-side file changes, code diffs, permission review, provider setup, Computer Use, H5 remote access, IM integration, and scheduled tasks in one app.
+CC-Tools is a **Desktop + CLI + Web workspace** for Claude Code. This project is based on and modified from [NanmiCoder/cc-haha](https://github.com/NanmiCoder/cc-haha).
 
 <p align="center">
-  <a href="#desktop-preview">Desktop Preview</a> · <a href="#install-the-desktop-app">Install</a> · <a href="#desktop-highlights">Highlights</a> · <a href="#sponsorship--partnership">Sponsorship</a> · <a href="#more-documentation">More Docs</a>
+  <a href="#desktop-preview">Desktop Preview</a> ·
+  <a href="#install-the-desktop-app">Install the Desktop App</a> ·
+  <a href="#configuration-directory">Configuration Directory</a> ·
+  <a href="#web-app">Web App</a> ·
+  <a href="#more-documentation">More Documentation</a>
 </p>
 
 ---
 
 ## Desktop Preview
 
-The CC-Tools desktop app brings sessions, multi-project navigation, branch / Worktree controls, right-side file changes, code diffs, permission review, provider setup, and remote access into one graphical workspace for daily development flows beyond the terminal.
+The CC-Tools desktop app brings sessions, multi-project navigation, branch / Worktree controls, right-side file changes, code diffs, permission review, provider setup, and remote access into one graphical workspace for daily development beyond the terminal.
 
 <p align="center">
   <a href="https://github.com/wenlong66/cc-tools/releases"><img src="https://img.shields.io/badge/⬇_Download_Desktop-macOS_%7C_Windows-D97757?style=for-the-badge" alt="Download Desktop"></a>
@@ -87,6 +91,53 @@ See [environment variables](docs/en/guide/env-vars.md) and [global usage](docs/e
 
 ---
 
+## Configuration Directory
+
+CC-Tools uses the **`.cc-tools` directory** by default instead of directly reading Claude's official `~/.claude` configuration directory.
+
+Common locations:
+
+- **User-level config**: `~/.cc-tools/`
+- **Project-level config**: `PROJECT_ROOT/.cc-tools/`
+- **Common files**:
+  - `~/.cc-tools/settings.json`
+  - `~/.cc-tools/CLAUDE.md`
+  - `~/.cc-tools/agents/`
+  - `~/.cc-tools/skills/`
+  - `PROJECT_ROOT/.cc-tools/settings.json`
+  - `PROJECT_ROOT/.cc-tools/settings.local.json`
+  - `PROJECT_ROOT/.cc-tools/agents/`
+  - `PROJECT_ROOT/.cc-tools/skills/`
+
+If you need to customize the global configuration root, you can override the default location with the `CLAUDE_CONFIG_DIR` environment variable.
+
+---
+
+## Web App
+
+The [web/](web/) directory contains a standalone Web frontend used to expose sessions, settings, providers, MCP, skills, and related features in a browser UI.
+
+In short:
+
+- **Desktop app**: best for full local usage with the most complete feature set.
+- **Web app**: better suited for browser access, H5 pages, and future remote management extensions.
+
+For local development:
+
+```bash
+# Start the project server
+SERVER_PORT=3456 bun run src/server/index.ts
+
+# Start the Web frontend
+cd web
+bun install
+bun run dev
+```
+
+If you are a regular user, the desktop app is the recommended starting point. If you want to build or customize the browser UI, focus on the `web/` directory.
+
+---
+
 ## More Documentation
 
 | Document | Description |
@@ -107,71 +158,6 @@ See [environment variables](docs/en/guide/env-vars.md) and [global usage](docs/e
 
 ---
 
-## Sponsorship & Partnership
-
-This project is maintained in the author's spare time. Corporate or individual sponsorships are welcome to support ongoing development. Custom features, integrations, and business partnerships are also open for discussion.
-
-<table>
-  <thead>
-    <tr>
-      <th width="220">Sponsor</th>
-      <th align="left">Description</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center" valign="middle">
-        <a href="https://jiekou.ai/referral?invited_code=OBNU3K">
-          <img src="docs/images/sponsors/jiekou-logo.svg" width="72" alt="JieKou AI"><br>
-          <strong>接口AI</strong>
-        </a>
-      </td>
-      <td valign="middle">
-        Thanks to <a href="https://jiekou.ai/referral?invited_code=OBNU3K">JieKou AI</a> for sponsoring this project. JieKou AI provides official model resources with stable, high-performance API access. Subscription bundles are priced at 20% off the official rate; new users who register through <a href="https://jiekou.ai/referral?invited_code=OBNU3K">this link</a> and bind GitHub can claim a $3 coupon.
-      </td>
-    </tr>
-    <tr>
-      <td align="center" valign="middle">
-        <a href="https://www.shengsuanyun.com/?from=CH_LEJ88KWR">
-          <img src="docs/images/sponsors/shengsuanyun-logo.svg" width="180" alt="ShengSuanYun">
-        </a>
-      </td>
-      <td valign="middle">
-        Thanks to <a href="https://www.shengsuanyun.com/?from=CH_LEJ88KWR">ShengSuanYun</a> for sponsoring this project. ShengSuanYun is an industrial-grade AI task parallel execution platform for AI Native Teams, aggregating Claude, ChatGPT, Gemini, and other LLM, image, and video model capacity through direct, non-reverse-engineered access. Its platform SLA reaches 99.7%, with <a href="https://watch.shengsuanyun.com/status/shengsuanyun">service status</a> available online. It also supports dedicated enterprise gateways, cost and permission controls, smart routing, security protection, BYOK, usage-based billing, upcoming tokens plans, and invoicing. New users registering through <a href="https://www.shengsuanyun.com/?from=CH_LEJ88KWR">this link</a> can receive 10 yuan in model credits plus a 10% first top-up bonus.
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-📧 **Contact**: relakkes@gmail.com
-
----
-
-## ☕ Buy Me a Coffee
-
-If this project helps you, consider buying me a coffee — every bit of support keeps this project going ❤️
-
-<table>
-<tr>
-<td align="center" width="33%">
-<img src="docs/images/donate/wechat_pay.jpeg" width="250" alt="WeChat Pay"><br>
-<b>WeChat Pay</b>
-</td>
-<td align="center" width="33%">
-<img src="docs/images/donate/zfb_pay.png" width="250" alt="Alipay"><br>
-<b>Alipay</b>
-</td>
-<td align="center" width="33%">
-<a href="https://buymeacoffee.com/relakkes" target="_blank">
-<img src="docs/images/donate/bmc_button.png" width="250" alt="Buy Me a Coffee">
-</a><br>
-<b>Buy Me a Coffee</b>
-</td>
-</tr>
-</table>
-
----
-
 ## Tech Stack
 
 | Category | Technology |
@@ -179,6 +165,7 @@ If this project helps you, consider buying me a coffee — every bit of support 
 | Language | TypeScript |
 | Desktop app | Tauri 2 |
 | Desktop UI | React + Vite |
+| Web UI | React + Vite |
 | Local runtime | [Bun](https://bun.sh) |
 | Terminal UI | React + [Ink](https://github.com/vadimdemedes/ink) |
 | CLI parsing | Commander.js |
@@ -192,23 +179,3 @@ Thanks to the following open-source projects and community practices for referen
 - [React](https://github.com/facebook/react): frontend engineering and component-based UI ecosystem.
 - [Tauri](https://github.com/tauri-apps/tauri): cross-platform desktop app capabilities and engineering practices.
 - [cc-switch](https://github.com/farion1231/cc-switch): reference for model provider configuration.
-
----
-
-## ⭐ Star History
-
-If this project helps you, please support it with a ⭐ Star so more people can discover CC-Tools.
-
-<a href="https://www.star-history.com/#NanmiCoder/cc-tools&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=NanmiCoder/cc-tools&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=NanmiCoder/cc-tools&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=NanmiCoder/cc-tools&type=Date" />
-  </picture>
-</a>
-
----
-
-## Disclaimer
-
-This repository is based on the Claude Code source leaked from the Anthropic npm registry on 2026-03-31. All original source code copyrights belong to [Anthropic](https://www.anthropic.com). It is provided for learning and research purposes only.

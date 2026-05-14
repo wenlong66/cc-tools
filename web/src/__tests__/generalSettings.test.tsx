@@ -517,11 +517,12 @@ describe('Settings > General tab', () => {
     )
   })
 
-  it('keeps extension tabs available alongside the terminal tab', () => {
+  it('keeps extension tabs available without Terminal or Computer Use tabs', () => {
     render(<Settings />)
 
     expect(screen.queryByText('Install')).not.toBeInTheDocument()
-    expect(screen.getByText('Terminal')).toBeInTheDocument()
+    expect(screen.queryByText('Terminal')).not.toBeInTheDocument()
+    expect(screen.queryByText('Computer Use')).not.toBeInTheDocument()
     expect(screen.getByText('MCP')).toBeInTheDocument()
     expect(screen.getByText('Plugins')).toBeInTheDocument()
   })

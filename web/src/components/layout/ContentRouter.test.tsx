@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -18,62 +18,53 @@ vi.mock('../../pages/Settings', () => ({
   Settings: () => <div data-testid="settings-page" />,
 }))
 
-vi.mock('../../pages/TerminalSettings', () => ({
-  TerminalSettings: ({ active, cwd, onNewTerminal, testId }: { active: boolean; cwd?: string; onNewTerminal: () => void; testId: string }) => (
-    <div data-active={active ? 'true' : 'false'} data-cwd={cwd ?? ''} data-testid={testId}>
-      <button type="button" onClick={onNewTerminal}>New Terminal</button>
-    </div>
-  ),
-}))
-
 import { ContentRouter } from './ContentRouter'
 import { useTabStore } from '../../stores/tabStore'
 
-describe('ContentRouter terminal tabs', () => {
+describe('ContentRouter', () => {
   afterEach(() => {
     cleanup()
     useTabStore.setState({ tabs: [], activeTabId: null })
   })
 
-  it('renders the active terminal tab as main content', () => {
+  it('renders the empty session when there is no active tab', () => {
+    render(<ContentRouter />)
+
+    expect(screen.getByTestId('empty-session')).toBeInTheDocument()
+  })
+
+  it('renders the settings page for the settings tab', () => {
     useTabStore.setState({
-      tabs: [{ sessionId: '__terminal__1', title: 'Terminal 1', type: 'terminal', status: 'idle', terminalCwd: '/tmp/project' }],
-      activeTabId: '__terminal__1',
+      tabs: [{ sessionId: '__settings__', title: 'Settings', type: 'settings', status: 'idle' }],
+      activeTabId: '__settings__',
     })
 
     render(<ContentRouter />)
 
-    expect(screen.getByTestId('terminal-host-__terminal__1')).toHaveAttribute('data-active', 'true')
-    expect(screen.getByTestId('terminal-host-__terminal__1')).toHaveAttribute('data-cwd', '/tmp/project')
+    expect(screen.getByTestId('settings-page')).toBeInTheDocument()
     expect(screen.queryByTestId('active-session')).not.toBeInTheDocument()
   })
 
-  it('keeps terminal tabs mounted while chat content is active', () => {
+  it('renders scheduled tasks for the scheduled tab', () => {
     useTabStore.setState({
-      tabs: [
-        { sessionId: '__terminal__1', title: 'Terminal 1', type: 'terminal', status: 'idle' },
-        { sessionId: 'session-1', title: 'Chat', type: 'session', status: 'idle' },
-      ],
+      tabs: [{ sessionId: '__scheduled__', title: 'Scheduled', type: 'scheduled', status: 'idle' }],
+      activeTabId: '__scheduled__',
+    })
+
+    render(<ContentRouter />)
+
+    expect(screen.getByTestId('scheduled-tasks')).toBeInTheDocument()
+    expect(screen.queryByTestId('active-session')).not.toBeInTheDocument()
+  })
+
+  it('renders the active session for a normal session tab', () => {
+    useTabStore.setState({
+      tabs: [{ sessionId: 'session-1', title: 'Chat', type: 'session', status: 'idle' }],
       activeTabId: 'session-1',
     })
 
     render(<ContentRouter />)
 
-    expect(screen.getByTestId('terminal-host-__terminal__1')).toHaveAttribute('data-active', 'false')
     expect(screen.getByTestId('active-session')).toBeInTheDocument()
-  })
-
-  it('can open another terminal tab from a terminal page', () => {
-    useTabStore.setState({
-      tabs: [{ sessionId: '__terminal__1', title: 'Terminal 1', type: 'terminal', status: 'idle', terminalCwd: '/tmp/project' }],
-      activeTabId: '__terminal__1',
-    })
-
-    render(<ContentRouter />)
-    fireEvent.click(screen.getByRole('button', { name: 'New Terminal' }))
-
-    expect(useTabStore.getState().tabs.filter((tab) => tab.type === 'terminal')).toHaveLength(2)
-    expect(useTabStore.getState().activeTabId).not.toBe('__terminal__1')
-    expect(useTabStore.getState().tabs.find((tab) => tab.sessionId === useTabStore.getState().activeTabId)?.terminalCwd).toBe('/tmp/project')
   })
 })

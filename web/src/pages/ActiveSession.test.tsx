@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { act } from 'react'
 
@@ -56,6 +56,10 @@ vi.mock('./TerminalSettings', () => ({
   ),
 }))
 
+vi.mock('../components/chat/ComputerUsePermissionModal', () => ({
+  ComputerUsePermissionModal: () => <div data-testid="computer-use-permission-modal" />,
+}))
+
 import { ActiveSession } from './ActiveSession'
 import { useChatStore } from '../stores/chatStore'
 import { useCLITaskStore } from '../stores/cliTaskStore'
@@ -64,12 +68,6 @@ import { useTabStore } from '../stores/tabStore'
 import { useTeamStore } from '../stores/teamStore'
 import { useWorkspacePanelStore } from '../stores/workspacePanelStore'
 import { WORKSPACE_PANEL_DEFAULT_WIDTH } from '../stores/workspacePanelStore'
-import { useTerminalPanelStore } from '../stores/terminalPanelStore'
-import {
-  TERMINAL_PANEL_DEFAULT_HEIGHT,
-  TERMINAL_PANEL_MAX_HEIGHT,
-  TERMINAL_PANEL_MIN_HEIGHT,
-} from '../stores/terminalPanelStore'
 
 afterEach(() => {
   cleanup()
@@ -80,7 +78,6 @@ afterEach(() => {
   useChatStore.setState({ sessions: {} })
   useTeamStore.setState({ teams: [], activeTeam: null, memberColors: new Map(), error: null })
   useWorkspacePanelStore.setState(useWorkspacePanelStore.getInitialState(), true)
-  useTerminalPanelStore.setState(useTerminalPanelStore.getInitialState(), true)
 })
 
 describe('ActiveSession task polling', () => {
@@ -502,7 +499,6 @@ describe('ActiveSession task polling', () => {
       },
     })
     useWorkspacePanelStore.getState().openPanel(sessionId)
-    useTerminalPanelStore.getState().openPanel(sessionId)
 
     render(<ActiveSession />)
 
@@ -516,7 +512,7 @@ describe('ActiveSession task polling', () => {
     expect(screen.queryByTestId('terminal-resize-handle')).not.toBeInTheDocument()
   })
 
-  it('renders a bottom terminal panel in the current session cwd and can promote it to a tab', async () => {
+  it('does not render a bottom terminal panel for a normal web session', () => {
     const sessionId = 'terminal-session'
 
     useSessionStore.setState({
@@ -560,62 +556,71 @@ describe('ActiveSession task polling', () => {
         },
       },
     })
-    useTerminalPanelStore.getState().openPanel(sessionId)
 
     render(<ActiveSession />)
 
-    const panel = screen.getByTestId('session-terminal-panel')
-    const resizeHandle = screen.getByTestId('terminal-resize-handle')
-    const host = screen.getByTestId(`session-terminal-host-${sessionId}`)
+    expect(screen.queryByTestId('session-terminal-panel')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('terminal-resize-handle')).not.toBeInTheDocument()
+    expect(screen.queryByTestId(`session-terminal-host-${sessionId}`)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open in Tab' })).not.toBeInTheDocument()
+  })
 
-    expect(panel).toHaveStyle({ height: `${TERMINAL_PANEL_DEFAULT_HEIGHT}px` })
-    expect(host).toHaveAttribute('data-cwd', '/tmp/project-root/packages/app')
-    expect(resizeHandle).toHaveAttribute('aria-valuemin', `${TERMINAL_PANEL_MIN_HEIGHT}`)
-    expect(resizeHandle).toHaveAttribute('aria-valuemax', `${TERMINAL_PANEL_MAX_HEIGHT}`)
+  it('does not render a Computer Use permission modal in the web session view', () => {
+    const sessionId = 'computer-use-session'
 
-    act(() => {
-      fireEvent.keyDown(resizeHandle, { key: 'ArrowUp' })
+    useSessionStore.setState({
+      sessions: [{
+        id: sessionId,
+        title: 'Computer Use Session',
+        createdAt: '2026-04-10T00:00:00.000Z',
+        modifiedAt: '2026-04-10T00:00:00.000Z',
+        messageCount: 1,
+        projectPath: '/tmp/project-root',
+        workDir: '/tmp/project-root',
+        workDirExists: true,
+      }],
+      activeSessionId: sessionId,
+      isLoading: false,
+      error: null,
     })
-    expect(useTerminalPanelStore.getState().height).toBe(TERMINAL_PANEL_DEFAULT_HEIGHT + 24)
-
-    await act(async () => {
-      const pointerDown = createEvent.pointerDown(resizeHandle)
-      Object.defineProperty(pointerDown, 'button', { value: 0 })
-      Object.defineProperty(pointerDown, 'clientY', { value: 300 })
-      fireEvent(resizeHandle, pointerDown)
+    useTabStore.setState({
+      tabs: [{ sessionId, title: 'Computer Use Session', status: 'idle' } as ReturnType<typeof useTabStore.getState>['tabs'][number]],
+      activeTabId: sessionId,
+    })
+    useChatStore.setState({
+      sessions: {
+        [sessionId]: {
+          messages: [{ id: 'msg-1', type: 'assistant_text', content: 'hello', timestamp: 1 }],
+          chatState: 'permission_pending',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: {
+            requestId: 'cu-1',
+            request: {
+              requestId: 'cu-1',
+              reason: 'Open Finder and inspect a file',
+              apps: [],
+              requestedFlags: {},
+              screenshotFiltering: 'native',
+            },
+          },
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
     })
 
-    await act(async () => {
-      const pointerMove = new Event('pointermove')
-      Object.defineProperty(pointerMove, 'clientY', { value: 260 })
-      window.dispatchEvent(pointerMove)
-      window.dispatchEvent(new Event('pointerup'))
-    })
-    expect(useTerminalPanelStore.getState().height).toBe(TERMINAL_PANEL_DEFAULT_HEIGHT + 64)
+    render(<ActiveSession />)
 
-    act(() => {
-      fireEvent.keyDown(resizeHandle, { key: 'End' })
-    })
-    expect(useTerminalPanelStore.getState().height).toBe(TERMINAL_PANEL_MAX_HEIGHT)
-
-    act(() => {
-      fireEvent.keyDown(resizeHandle, { key: 'Home' })
-    })
-    expect(useTerminalPanelStore.getState().height).toBe(TERMINAL_PANEL_MIN_HEIGHT)
-
-    act(() => {
-      fireEvent.doubleClick(resizeHandle)
-    })
-    expect(useTerminalPanelStore.getState().height).toBe(TERMINAL_PANEL_DEFAULT_HEIGHT)
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Open in Tab' }))
-      await Promise.resolve()
-    })
-
-    const terminalTab = useTabStore.getState().tabs.find((tab) => tab.type === 'terminal')
-    expect(useTerminalPanelStore.getState().isPanelOpen(sessionId)).toBe(false)
-    expect(terminalTab?.terminalCwd).toBe('/tmp/project-root/packages/app')
-    expect(useTabStore.getState().activeTabId).toBe(terminalTab?.sessionId)
+    expect(screen.queryByTestId('computer-use-permission-modal')).not.toBeInTheDocument()
   })
 })

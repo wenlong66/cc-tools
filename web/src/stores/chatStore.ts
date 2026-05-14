@@ -776,25 +776,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }))
         break
 
-      case 'computer_use_permission_request':
-        notifyDesktop({
-          dedupeKey: `computer-use-permission:${msg.requestId}`,
-          cooldownScope: 'permission-prompt',
-          requestAttention: true,
-          title: 'CC-Tools 需要你的确认',
-          body: msg.request.reason || 'Computer Use 正在等待允许。',
-          target: { type: 'session', sessionId },
-        })
-        update(() => ({
-          pendingComputerUsePermission: {
-            requestId: msg.requestId,
-            request: msg.request,
+      case 'computer_use_permission_request': {
+        get().respondToComputerUsePermission(sessionId, msg.requestId, {
+          granted: [],
+          denied: msg.request.apps
+            .flatMap((app) => app.resolved ? [{ bundleId: app.resolved.bundleId, reason: 'user_denied' as const }] : []),
+          flags: {
+            clipboardRead: false,
+            clipboardWrite: false,
+            systemKeyCombos: false,
           },
-          pendingPermission: null,
-          chatState: 'permission_pending',
-          activeThinkingId: null,
-        }))
+          userConsented: false,
+        })
         break
+      }
 
       case 'message_complete': {
         const session = get().sessions[sessionId]

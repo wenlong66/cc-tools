@@ -34,12 +34,10 @@ export type SettingsTab =
   | 'activity'
   | 'general'
   | 'adapters'
-  | 'terminal'
   | 'mcp'
   | 'agents'
   | 'skills'
   | 'plugins'
-  | 'computerUse'
   | 'diagnostics'
   | 'about'
 

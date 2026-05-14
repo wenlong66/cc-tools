@@ -187,7 +187,7 @@ describe('TabBar', () => {
     expect(rightButton?.nextElementSibling).toBe(screen.getByTestId('window-controls'))
   })
 
-  it('shows the terminal toolbar when no tabs are open', async () => {
+  it('does not show a terminal toolbar button when no tabs are open', async () => {
     windowControlsMock.show = false
     const { TabBar } = await import('./TabBar')
     const { useTabStore } = await import('../../stores/tabStore')
@@ -198,11 +198,7 @@ describe('TabBar', () => {
       render(<TabBar />)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Terminal' }))
-
-    const terminalTabs = useTabStore.getState().tabs.filter((tab) => tab.type === 'terminal')
-    expect(terminalTabs).toHaveLength(1)
-    expect(useTabStore.getState().activeTabId).toBe(terminalTabs[0]?.sessionId)
+    expect(screen.queryByRole('button', { name: 'Open Terminal' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('window-controls')).not.toBeInTheDocument()
   })
 
@@ -411,41 +407,10 @@ describe('TabBar', () => {
     expect(useTabStore.getState().activeTabId).toBe('tab-2')
   })
 
-  it('closes terminal tabs without disconnecting chat sessions', async () => {
+  it('does not render a terminal toolbar button for an active session', async () => {
     const { TabBar } = await import('./TabBar')
     const { useTabStore } = await import('../../stores/tabStore')
     const { useChatStore } = await import('../../stores/chatStore')
-
-    const disconnectSession = vi.fn()
-
-    useTabStore.setState({
-      tabs: [
-        { sessionId: '__terminal__1', title: 'Terminal 1', type: 'terminal', status: 'idle' },
-      ],
-      activeTabId: '__terminal__1',
-    })
-    useChatStore.setState({
-      sessions: {},
-      disconnectSession,
-    } as Partial<ReturnType<typeof useChatStore.getState>>)
-
-    await act(async () => {
-      render(<TabBar />)
-    })
-
-    expect(screen.getByLabelText('Open Terminal')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByLabelText('Close Terminal 1'))
-
-    expect(disconnectSession).not.toHaveBeenCalled()
-    expect(useTabStore.getState().tabs).toEqual([])
-  })
-
-  it('opens the bottom terminal panel from the toolbar for an active session', async () => {
-    const { TabBar } = await import('./TabBar')
-    const { useTabStore } = await import('../../stores/tabStore')
-    const { useChatStore } = await import('../../stores/chatStore')
-    const { useTerminalPanelStore } = await import('../../stores/terminalPanelStore')
 
     useTabStore.setState({
       tabs: [
@@ -462,38 +427,7 @@ describe('TabBar', () => {
       render(<TabBar />)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Terminal' }))
-
-    const terminalTabs = useTabStore.getState().tabs.filter((tab) => tab.type === 'terminal')
-    expect(terminalTabs).toHaveLength(0)
-    expect(useTerminalPanelStore.getState().isPanelOpen('tab-1')).toBe(true)
-  })
-
-  it('treats legacy session tabs without a type as bottom-panel terminal targets', async () => {
-    const { TabBar } = await import('./TabBar')
-    const { useTabStore } = await import('../../stores/tabStore')
-    const { useChatStore } = await import('../../stores/chatStore')
-    const { useTerminalPanelStore } = await import('../../stores/terminalPanelStore')
-
-    useTabStore.setState({
-      tabs: [
-        { sessionId: 'legacy-session', title: 'Legacy Session', status: 'idle' } as ReturnType<typeof useTabStore.getState>['tabs'][number],
-      ],
-      activeTabId: 'legacy-session',
-    })
-    useChatStore.setState({
-      sessions: {},
-      disconnectSession: vi.fn(),
-    } as Partial<ReturnType<typeof useChatStore.getState>>)
-
-    await act(async () => {
-      render(<TabBar />)
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open Terminal' }))
-
-    expect(useTabStore.getState().tabs.some((tab) => tab.type === 'terminal')).toBe(false)
-    expect(useTerminalPanelStore.getState().isPanelOpen('legacy-session')).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Open Terminal' })).not.toBeInTheDocument()
   })
 
   it('toggles the workspace panel for the active session from the toolbar', async () => {
@@ -531,10 +465,10 @@ describe('TabBar', () => {
 
     useTabStore.setState({
       tabs: [
-        { sessionId: '__terminal__1', title: 'Terminal 1', type: 'terminal', status: 'idle' },
+        { sessionId: '__scheduled__', title: 'Scheduled', type: 'scheduled', status: 'idle' },
         { sessionId: '__settings__', title: 'Settings', type: 'settings', status: 'idle' },
       ],
-      activeTabId: '__terminal__1',
+      activeTabId: '__scheduled__',
     })
     useChatStore.setState({
       sessions: {},
@@ -553,12 +487,11 @@ describe('TabBar', () => {
     expect(screen.queryByRole('button', { name: 'Show Workspace' })).not.toBeInTheDocument()
   })
 
-  it('clears session panel state when closing a session tab', async () => {
+  it('clears workspace panel state when closing a session tab', async () => {
     const { TabBar } = await import('./TabBar')
     const { useTabStore } = await import('../../stores/tabStore')
     const { useChatStore } = await import('../../stores/chatStore')
     const { useWorkspacePanelStore } = await import('../../stores/workspacePanelStore')
-    const { useTerminalPanelStore } = await import('../../stores/terminalPanelStore')
 
     useTabStore.setState({
       tabs: [
@@ -571,7 +504,6 @@ describe('TabBar', () => {
       disconnectSession: vi.fn(),
     } as Partial<ReturnType<typeof useChatStore.getState>>)
     useWorkspacePanelStore.getState().openPanel('tab-1')
-    useTerminalPanelStore.getState().openPanel('tab-1')
 
     await act(async () => {
       render(<TabBar />)
@@ -580,6 +512,5 @@ describe('TabBar', () => {
     fireEvent.click(screen.getByLabelText('Close First Session'))
 
     expect(useWorkspacePanelStore.getState().panelBySession['tab-1']).toBeUndefined()
-    expect(useTerminalPanelStore.getState().panelBySession['tab-1']).toBeUndefined()
   })
 })

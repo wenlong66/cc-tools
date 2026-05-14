@@ -4,13 +4,11 @@ import { EmptySession } from '../../pages/EmptySession'
 import { ActiveSession } from '../../pages/ActiveSession'
 import { ScheduledTasks } from '../../pages/ScheduledTasks'
 import { Settings } from '../../pages/Settings'
-import { TerminalSettings } from '../../pages/TerminalSettings'
 
 export function ContentRouter() {
   const activeTabId = useTabStore((s) => s.activeTabId)
   const tabs = useTabStore((s) => s.tabs)
   const activeTabType = tabs.find((t) => t.sessionId === activeTabId)?.type
-  const terminalTabs = tabs.filter((tab) => tab.type === 'terminal')
 
   let page: ReactNode = null
   if (!activeTabId || !activeTabType) {
@@ -19,7 +17,7 @@ export function ContentRouter() {
     page = <Settings />
   } else if (activeTabType === 'scheduled') {
     page = <ScheduledTasks />
-  } else if (activeTabType !== 'terminal') {
+  } else {
     page = <ActiveSession />
   }
 
@@ -30,28 +28,6 @@ export function ContentRouter() {
           {page}
         </div>
       )}
-      {terminalTabs.map((tab) => {
-        const active = tab.sessionId === activeTabId
-        const visible = activeTabType === 'terminal' && active
-        return (
-          <div
-            key={tab.sessionId}
-            aria-hidden={!visible}
-            data-testid={`terminal-tab-panel-${tab.sessionId}`}
-            className={`absolute inset-0 flex min-h-0 flex-col overflow-hidden ${
-              visible ? 'z-20 opacity-100' : 'pointer-events-none z-0 opacity-0'
-            }`}
-          >
-            <TerminalSettings
-              active={active}
-              cwd={tab.terminalCwd}
-              workspace
-              testId={`terminal-host-${tab.sessionId}`}
-              onNewTerminal={() => useTabStore.getState().openTerminalTab(tab.terminalCwd)}
-            />
-          </div>
-        )
-      })}
     </div>
   )
 }
