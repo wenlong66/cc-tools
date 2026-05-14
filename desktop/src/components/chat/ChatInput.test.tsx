@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import '@testing-library/jest-dom'
+import { act } from 'react'
 
 const viewportMocks = vi.hoisted(() => ({
   isMobile: false,
@@ -166,6 +167,118 @@ describe('ChatInput file mentions', () => {
     mocks.list.mockResolvedValue({ sessions: [], total: 0 })
     mocks.getMessages.mockResolvedValue({ messages: [] })
     mocks.getSlashCommands.mockResolvedValue({ commands: [] })
+  })
+
+  it('keeps unsent composer drafts isolated when switching between session tabs', async () => {
+    const historySessionId = 'history-session'
+    useTabStore.setState({
+      activeTabId: sessionId,
+      tabs: [
+        { sessionId, title: 'New session', type: 'session', status: 'idle' },
+        { sessionId: historySessionId, title: 'History session', type: 'session', status: 'idle' },
+      ],
+    })
+    useSessionStore.setState({
+      sessions: [
+        {
+          id: sessionId,
+          title: 'New session',
+          createdAt: '2026-05-01T00:00:00.000Z',
+          modifiedAt: '2026-05-01T00:00:00.000Z',
+          messageCount: 0,
+          projectPath: '/repo',
+          workDir: '/repo',
+          workDirExists: true,
+        },
+        {
+          id: historySessionId,
+          title: 'History session',
+          createdAt: '2026-05-01T00:00:00.000Z',
+          modifiedAt: '2026-05-01T00:00:00.000Z',
+          messageCount: 1,
+          projectPath: '/repo',
+          workDir: '/repo',
+          workDirExists: true,
+        },
+      ],
+      activeSessionId: sessionId,
+    })
+    useChatStore.setState({
+      sessions: {
+        [sessionId]: {
+          messages: [],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+        [historySessionId]: {
+          messages: [{ id: 'history-message', type: 'assistant_text', content: 'ready', timestamp: 1 }],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
+    })
+
+    render(<ChatInput variant="hero" />)
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: { value: 'new tab draft', selectionStart: 13 },
+    })
+    expect(input.value).toBe('new tab draft')
+
+    act(() => {
+      useTabStore.setState({ activeTabId: historySessionId })
+    })
+
+    await waitFor(() => {
+      expect(input.value).toBe('')
+    })
+
+    fireEvent.change(input, {
+      target: { value: 'history tab draft', selectionStart: 17 },
+    })
+
+    act(() => {
+      useTabStore.setState({ activeTabId: sessionId })
+    })
+
+    await waitFor(() => {
+      expect(input.value).toBe('new tab draft')
+    })
+
+    act(() => {
+      useTabStore.setState({ activeTabId: historySessionId })
+    })
+
+    await waitFor(() => {
+      expect(input.value).toBe('history tab draft')
+    })
   })
 
   it('shows branch and worktree launch controls for an empty active Git session', async () => {
@@ -407,7 +520,7 @@ describe('ChatInput file mentions', () => {
       },
     })
 
-    fireEvent.click(await screen.findByText('conditions.py'))
+    fireEvent.click(await screen.findByText('backend/src/conditions.py'))
 
     await waitFor(() => {
       expect(input.value).toBe('记一下这个文件讲了什么东西。')
@@ -423,6 +536,7 @@ describe('ChatInput file mentions', () => {
         type: 'file',
         name: 'conditions.py',
         path: '/repo/backend/src/conditions.py',
+        isDirectory: false,
         lineStart: undefined,
         lineEnd: undefined,
         note: undefined,
@@ -435,6 +549,59 @@ describe('ChatInput file mentions', () => {
       content: '记一下这个文件讲了什么东西。',
       modelContent: '@"/repo/backend/src/conditions.py" 记一下这个文件讲了什么东西。',
       attachments: [{ name: 'conditions.py', path: '/repo/backend/src/conditions.py' }],
+    })
+  })
+
+  it('turns a selected @ directory into a workspace chip and model path reference', async () => {
+    mocks.search.mockResolvedValueOnce({
+      currentPath: '/repo',
+      parentPath: '/',
+      query: 'backend',
+      entries: [
+        { name: 'backend', path: '/repo/backend', relativePath: 'backend', isDirectory: true },
+      ],
+    })
+
+    render(<ChatInput compact />)
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: {
+        value: '@backend 讲一下这个目录。',
+        selectionStart: '@backend'.length,
+      },
+    })
+
+    fireEvent.click(await screen.findByRole('option', { name: /backend/i }))
+
+    await waitFor(() => {
+      expect(input.value).toBe('讲一下这个目录。')
+    })
+    expect(screen.getByText('backend/')).toBeInTheDocument()
+    expect(screen.getByText('folder')).toBeInTheDocument()
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(mocks.wsSend).toHaveBeenCalledWith(sessionId, {
+      type: 'user_message',
+      content: '讲一下这个目录。',
+      attachments: [{
+        type: 'file',
+        name: 'backend/',
+        path: '/repo/backend',
+        isDirectory: true,
+        lineStart: undefined,
+        lineEnd: undefined,
+        note: undefined,
+        quote: undefined,
+      }],
+    })
+    const messages = useChatStore.getState().sessions[sessionId]?.messages ?? []
+    expect(messages[messages.length - 1]).toMatchObject({
+      type: 'user_text',
+      content: '讲一下这个目录。',
+      modelContent: '@"/repo/backend" 讲一下这个目录。',
+      attachments: [{ name: 'backend/', path: '/repo/backend' }],
     })
   })
 

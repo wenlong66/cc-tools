@@ -1,16 +1,11 @@
 /**
- * CORS middleware for local desktop app communication
+ * CORS middleware for desktop and temporary open H5 access.
  */
 
-import { H5AccessService } from '../services/h5AccessService.js'
-
-const ALLOWED_ORIGIN_RE =
-  /^(?:https?:\/\/(?:localhost|127\.0\.0\.1|tauri\.localhost)(?::\d+)?|tauri:\/\/localhost|asset:\/\/localhost)$/
+import { isLoopbackHost } from '../h5AccessPolicy.js'
 
 export function corsHeaders(origin?: string | null): Record<string, string> {
-  // Allow localhost origins (http/https) and Tauri WebView origins
-  const allowedOrigin =
-    origin && ALLOWED_ORIGIN_RE.test(origin) ? origin : 'http://localhost:3000'
+  const allowedOrigin = origin || 'http://localhost:3000'
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
@@ -35,9 +30,37 @@ export type CorsResolution = {
   headers: Record<string, string>
 }
 
+export type CorsResolutionOptions = {
+  h5Enabled?: boolean
+  isOriginAllowed?: (origin: string) => Promise<boolean>
+}
+
+const LOCAL_ORIGINS = new Set([
+  'http://tauri.localhost',
+  'https://tauri.localhost',
+  'tauri://localhost',
+])
+
+function isLocalOrigin(origin?: string | null): boolean {
+  if (!origin) {
+    return true
+  }
+
+  if (LOCAL_ORIGINS.has(origin)) {
+    return true
+  }
+
+  try {
+    return isLoopbackHost(new URL(origin).hostname)
+  } catch {
+    return false
+  }
+}
+
 export async function resolveCors(
   origin?: string | null,
-  requestOrigin?: string | null,
+  _requestOrigin?: string | null,
+  options: CorsResolutionOptions = {},
 ): Promise<CorsResolution> {
   if (!origin) {
     return {
@@ -47,15 +70,7 @@ export async function resolveCors(
     }
   }
 
-  if (ALLOWED_ORIGIN_RE.test(origin)) {
-    return {
-      allowed: true,
-      rejected: false,
-      headers: corsHeaders(origin),
-    }
-  }
-
-  if (requestOrigin && origin === requestOrigin) {
+  if (!options.h5Enabled || isLocalOrigin(origin)) {
     return {
       allowed: true,
       rejected: false,
@@ -66,8 +81,7 @@ export async function resolveCors(
     }
   }
 
-  const h5AccessService = new H5AccessService()
-  if (await h5AccessService.isOriginAllowed(origin)) {
+  if (options.isOriginAllowed && await options.isOriginAllowed(origin)) {
     return {
       allowed: true,
       rejected: false,

@@ -131,17 +131,19 @@ export async function initializeDesktopServerUrl() {
 }
 
 async function initializeBrowserServerUrl(fallbackUrl: string) {
-  const queryUrl =
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('serverUrl')
-      : null
+  const query = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search)
+    : null
+  const queryUrl = query?.get('serverUrl') ?? null
+  const queryToken = normalizeToken(query?.get('h5Token') ?? query?.get('token'))
   const stored = readStoredH5Connection()
+  const configuredUrl = getConfiguredBrowserServerUrl(fallbackUrl)
   const requestedUrl =
     normalizeServerUrl(queryUrl) ??
+    configuredUrl ??
     stored.serverUrl ??
-    getConfiguredBrowserServerUrl(fallbackUrl) ??
     fallbackUrl
-  const token = stored.token
+  const token = queryToken ?? stored.token
   const browserH5Runtime = requiresH5AuthForServerUrl(requestedUrl)
 
   setBaseUrl(requestedUrl)
@@ -181,6 +183,14 @@ async function initializeBrowserServerUrl(fallbackUrl: string) {
     throw normalizeBrowserH5Error(error, requestedUrl)
   }
 
+  if (queryToken && typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(H5_TOKEN_STORAGE_KEY, queryToken)
+    } catch {
+      // Ignore storage failures after successful verification.
+    }
+  }
+
   return requestedUrl
 }
 
@@ -193,9 +203,19 @@ async function waitForHealth(serverUrl: string) {
         cache: 'no-store',
       })
       if (response.ok) {
-        return
+        const contentType = response.headers.get('content-type') ?? ''
+        if (!contentType.toLowerCase().includes('application/json')) {
+          lastError = new Error(`healthcheck returned non-JSON response from ${serverUrl}/health`)
+        } else {
+          const body = await response.json().catch(() => null)
+          if (body && typeof body === 'object' && 'status' in body && body.status === 'ok') {
+            return
+          }
+          lastError = new Error(`healthcheck returned invalid response from ${serverUrl}/health`)
+        }
+      } else {
+        lastError = new Error(`healthcheck returned ${response.status}`)
       }
-      lastError = new Error(`healthcheck returned ${response.status}`)
     } catch (error) {
       lastError = error
     }
@@ -269,46 +289,12 @@ export function isLoopbackHostname(hostname: string) {
 }
 
 export function requiresH5AuthForServerUrl(serverUrl: string, browserHostname = getBrowserHostname()) {
+  void browserHostname
   try {
-    const serverHostname = new URL(serverUrl).hostname
-    if (isLoopbackHostname(serverHostname)) {
-      return false
-    }
-    if (browserHostname && isLoopbackHostname(browserHostname) && isPrivateNetworkHostname(serverHostname)) {
-      return false
-    }
-    return true
+    return !isLoopbackHostname(new URL(serverUrl).hostname)
   } catch {
     return false
   }
-}
-
-function isPrivateNetworkHostname(hostname: string) {
-  const normalized = hostname.trim().replace(/^\[/, '').replace(/\]$/, '').toLowerCase()
-
-  if (normalized === '0.0.0.0') {
-    return true
-  }
-
-  const ipv4Parts = normalized.split('.')
-  if (ipv4Parts.length === 4 && ipv4Parts.every((part) => /^\d+$/.test(part))) {
-    const octets = ipv4Parts.map((part) => Number(part))
-    if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
-      return false
-    }
-    const a = octets[0] ?? -1
-    const b = octets[1] ?? -1
-    return (
-      a === 10 ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 169 && b === 254)
-    )
-  }
-
-  return normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    normalized.startsWith('fe80:')
 }
 
 function getBrowserHostname() {
