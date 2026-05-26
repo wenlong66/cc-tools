@@ -4,6 +4,8 @@ import * as path from 'node:path'
 import { promisify } from 'node:util'
 import { ApiError } from '../middleware/errorHandler.js'
 import { findCanonicalGitRoot, findGitRoot } from '../../utils/git.js'
+import { registerFilesystemAccessRoot } from './filesystemAccessRoots.js'
+import { normalizeDriveRootPathForPlatform } from './windowsDrivePath.js'
 import {
   ensureWorktreesDirExcluded,
   performPostCreationSetup,
@@ -91,7 +93,7 @@ export type RepositorySessionLaunchState = {
 
 function samePath(left: string | null | undefined, right: string | null | undefined): boolean {
   if (!left || !right) return false
-  return normalizeFilesystemPath(left) === normalizeFilesystemPath(right)
+  return path.resolve(left) === path.resolve(right)
 }
 
 export function isMaterializedWorktreeLaunch(
@@ -167,10 +169,10 @@ async function runGit(
 }
 
 async function resolveDirectory(workDir: string): Promise<string> {
-  const resolved = path.resolve(workDir)
+  const resolved = path.resolve(normalizeDriveRootPathForPlatform(workDir))
   let realPath: string
   try {
-    realPath = await fs.realpath(resolved)
+    realPath = normalizeDriveRootPathForPlatform(await fs.realpath(resolved))
   } catch {
     throw repositoryBadRequest(
       REPOSITORY_ERROR.workdirMissing,
@@ -189,6 +191,19 @@ async function resolveDirectory(workDir: string): Promise<string> {
   return realPath
 }
 
+async function canonicalizeKnownPath(candidate: string): Promise<string> {
+  try {
+    return (await fs.realpath(candidate)).normalize('NFC')
+  } catch {
+    return path.resolve(candidate).normalize('NFC')
+  }
+}
+
+function isSameOrInsidePath(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate)
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
 function normalizeRemoteBranch(ref: string): { name: string; remoteRef: string } | null {
   if (!ref || ref.endsWith('/HEAD')) return null
   const slash = ref.indexOf('/')
@@ -200,11 +215,6 @@ function normalizeRemoteBranch(ref: string): { name: string; remoteRef: string }
     name: remote === 'origin' ? name : ref,
     remoteRef: ref,
   }
-}
-
-function normalizeFilesystemPath(targetPath: string): string {
-  const normalized = path.resolve(targetPath).replace(/[\\/]+/g, '/').replace(/\/+$/, '')
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
 function parseWorktreeList(stdout: string): GitWorktreeRecord[] {
@@ -318,10 +328,12 @@ export async function getRepositoryContext(workDir: string): Promise<RepositoryC
   let absWorkDir: string
   try {
     absWorkDir = await resolveDirectory(workDir)
+    registerFilesystemAccessRoot(workDir)
+    registerFilesystemAccessRoot(absWorkDir)
   } catch (error) {
     return {
       state: 'missing_workdir',
-      workDir: path.resolve(workDir),
+      workDir: path.resolve(normalizeDriveRootPathForPlatform(workDir)),
       repoRoot: null,
       repoName: null,
       currentBranch: null,
@@ -350,6 +362,7 @@ export async function getRepositoryContext(workDir: string): Promise<RepositoryC
 
   try {
     const repoRoot = findCanonicalGitRoot(gitRoot) ?? gitRoot
+    registerFilesystemAccessRoot(repoRoot)
     const [branchResult, defaultBranch, statusResult, worktreeResult] = await Promise.all([
       runGit(gitRoot, ['branch', '--show-current']),
       getDefaultBranch(gitRoot),
@@ -358,18 +371,18 @@ export async function getRepositoryContext(workDir: string): Promise<RepositoryC
     ])
 
     const currentBranch = branchResult.stdout.trim() || null
-    const worktreeRecords = worktreeResult.code === 0 ? parseWorktreeList(worktreeResult.stdout) : []
-    const normalizedWorkDir = normalizeFilesystemPath(absWorkDir)
-    const worktrees = worktreeRecords.map((worktree) => {
-      const normalizedWorktreePath = normalizeFilesystemPath(worktree.path)
-      return {
-        path: worktree.path,
-        branch: worktree.branch,
-        current:
-          normalizedWorkDir === normalizedWorktreePath ||
-          normalizedWorkDir.startsWith(`${normalizedWorktreePath}/`),
-      }
-    })
+    const rawWorktreeRecords = worktreeResult.code === 0 ? parseWorktreeList(worktreeResult.stdout) : []
+    const worktreeRecords = await Promise.all(
+      rawWorktreeRecords.map(async (worktree) => ({
+        ...worktree,
+        path: await canonicalizeKnownPath(worktree.path),
+      })),
+    )
+    const worktrees = worktreeRecords.map((worktree) => ({
+      path: worktree.path,
+      branch: worktree.branch,
+      current: isSameOrInsidePath(worktree.path, absWorkDir),
+    }))
 
     return {
       state: 'ok',
@@ -437,7 +450,7 @@ async function createDesktopWorktree(
   }
 
   const slug = safeWorktreeSlug(branch.name, sessionId)
-  const worktreePath = path.join(context.repoRoot, '.cc-tools', 'worktrees', slug)
+  const worktreePath = path.join(context.repoRoot, '.claude', 'worktrees', slug)
   const branchName = worktreeBranchName(slug)
 
   await ensureWorktreesDirExcluded(context.repoRoot)
@@ -484,7 +497,7 @@ function planIsolatedWorktree(
   }
 
   const slug = safeWorktreeSlug(branch.name, sessionId)
-  const worktreePath = path.join(context.repoRoot, '.cc-tools', 'worktrees', slug)
+  const worktreePath = path.join(context.repoRoot, '.claude', 'worktrees', slug)
   const branchName = worktreeBranchName(slug)
 
   return {

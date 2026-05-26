@@ -1,12 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/tauri-schema-v2.json",
   "productName": "CC-Tools",
-  "version": "0.2.6",
+  "version": "0.3.1",
   "identifier": "com.cc-tools.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "bun run ensure:dev-dist && bun run build:sidecars && bun run dev",
+    "beforeDevCommand": "bun run build:sidecars && bun run dev",
     "beforeBuildCommand": "bun run build && bun run build:sidecars"
   },
   "app": {
@@ -24,7 +24,7 @@
     ],
     "security": {
       "dangerousDisableAssetCspModification": ["style-src"],
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* ws://localhost:* http://localhost:*; media-src 'self' blob:"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost http://127.0.0.1:* http://localhost:*; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* ws://localhost:* http://localhost:*; media-src 'self' blob:"
     }
   },
   "plugins": {

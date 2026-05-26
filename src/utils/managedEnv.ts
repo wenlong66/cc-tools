@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { isRemoteManagedSettingsEligible } from '../services/remoteManagedSettings/syncCache.js'
+import { mergeActiveProviderManagedEnv } from '../server/services/providerRuntimeEnv.js'
 import { clearCACertsCache } from './caCerts.js'
 import { getGlobalConfig } from './config.js'
 import {
@@ -10,6 +11,7 @@ import {
   isProviderManagedEnvVar,
   SAFE_ENV_VARS,
 } from './managedEnvConstants.js'
+import { normalizeLegacyDeepSeekManagedEnv } from './providerManagedEnvCompat.js'
 import { clearMTLSCache } from './mtls.js'
 import { clearProxyCache, configureGlobalAgents } from './proxy.js'
 import { isSettingSourceEnabled } from './settings/constants.js'
@@ -104,9 +106,10 @@ function getCCToolsSettingsEnv(): Record<string, string> {
   try {
     const raw = readFileSync(getCCToolsSettingsPath(), 'utf-8')
     const parsed = JSON.parse(raw) as { env?: Record<string, string> }
-    return parsed.env ?? {}
+    const settingsEnv = normalizeLegacyDeepSeekManagedEnv(parsed.env ?? {}).env
+    return mergeActiveProviderManagedEnv(settingsEnv, getClaudeConfigHomeDir())
   } catch {
-    return {}
+    return mergeActiveProviderManagedEnv({}, getClaudeConfigHomeDir())
   }
 }
 

@@ -10,9 +10,12 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { ProviderService } from './providerService.js'
+import {
+  OPENAI_CODEX_OAUTH_FILE_ENV_KEY,
+  OPENAI_OAUTH_PROVIDER_ENV_KEY,
+} from './openaiOfficialProvider.js'
 import { sessionService } from './sessionService.js'
 import { diagnosticsService } from './diagnosticsService.js'
-import { hahaOAuthService } from './hahaOAuthService.js'
 import {
   isMaterializedWorktreeLaunch,
   prepareSessionWorkspace,
@@ -23,15 +26,18 @@ import {
   buildClaudeCliArgs,
   resolveClaudeCliLauncher,
 } from '../../utils/desktopBundledCli.js'
-import {
-  getCCToolsSettingsPath,
-  getCCToolsProvidersPath,
-} from '../../utils/envUtils.js'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { findCanonicalGitRoot } from '../../utils/git.js'
+import { sanitizePath } from '../../utils/path.js'
+import { getProcessEnvWithTerminalShellEnvironment } from '../../utils/terminalShellEnvironment.js'
+import { attributionHeaderEnvForModel } from './attributionHeaderPolicy.js'
+import { buildNetworkEnvironment, loadNetworkSettings } from './networkSettings.js'
 
 const MAX_CAPTURED_PROCESS_LINES = 80
 const MAX_CAPTURED_SDK_MESSAGES = 40
 const MAX_CAPTURED_SDK_SUMMARY = 20
 const CONTROL_READY_POLL_MS = 50
+const AUTO_MEMORY_DIRNAME = 'memory'
 
 type AttachmentRef = {
   type: 'file' | 'image'
@@ -61,10 +67,20 @@ type SessionProcess = {
     string,
     {
       toolName: string
+      toolUseId?: string
+      description?: string
       input: Record<string, unknown>
       permissionSuggestions?: unknown[]
     }
   >
+}
+
+export type PendingPermissionRequest = {
+  requestId: string
+  toolName: string
+  toolUseId?: string
+  input: Record<string, unknown>
+  description?: string
 }
 
 type SessionStartOptions = {
@@ -441,6 +457,27 @@ export class ConversationService {
     })
   }
 
+  setMaxThinkingTokens(sessionId: string, maxThinkingTokens: number | null): boolean {
+    return this.sendSdkMessage(sessionId, {
+      type: 'control_request',
+      request_id: crypto.randomUUID(),
+      request: {
+        subtype: 'set_max_thinking_tokens',
+        max_thinking_tokens: maxThinkingTokens,
+      },
+    })
+  }
+
+  setMaxThinkingTokensForActiveSessions(maxThinkingTokens: number | null): number {
+    let sent = 0
+    for (const sessionId of this.getActiveSessions()) {
+      if (this.setMaxThinkingTokens(sessionId, maxThinkingTokens)) {
+        sent += 1
+      }
+    }
+    return sent
+  }
+
   sendInterrupt(sessionId: string): boolean {
     return this.sendSdkMessage(sessionId, {
       type: 'control_request',
@@ -550,6 +587,19 @@ export class ConversationService {
     return session?.permissionMode || 'default'
   }
 
+  getPendingPermissionRequests(sessionId: string): PendingPermissionRequest[] {
+    const session = this.sessions.get(sessionId)
+    if (!session) return []
+
+    return Array.from(session.pendingPermissionRequests.entries()).map(([requestId, request]) => ({
+      requestId,
+      toolName: request.toolName,
+      ...(request.toolUseId ? { toolUseId: request.toolUseId } : {}),
+      input: request.input,
+      ...(request.description ? { description: request.description } : {}),
+    }))
+  }
+
   authorizeSdkConnection(
     sessionId: string,
     token: string | null | undefined,
@@ -621,14 +671,34 @@ export class ConversationService {
               typeof msg.request.tool_name === 'string'
                 ? msg.request.tool_name
                 : 'Unknown',
+            toolUseId:
+              typeof msg.request.tool_use_id === 'string' && msg.request.tool_use_id.trim()
+                ? msg.request.tool_use_id
+                : undefined,
             input:
               msg.request.input && typeof msg.request.input === 'object'
                 ? (msg.request.input as Record<string, unknown>)
                 : {},
+            description:
+              typeof msg.request.description === 'string' && msg.request.description.trim()
+                ? msg.request.description
+                : undefined,
             permissionSuggestions: Array.isArray(msg.request.permission_suggestions)
               ? msg.request.permission_suggestions
               : undefined,
           })
+        }
+        if (
+          (msg?.type === 'control_cancel_request' || msg?.type === 'control_response') &&
+          typeof msg.request_id === 'string'
+        ) {
+          session.pendingPermissionRequests.delete(msg.request_id)
+        }
+        if (
+          msg?.type === 'control_response' &&
+          typeof msg.response?.request_id === 'string'
+        ) {
+          session.pendingPermissionRequests.delete(msg.response.request_id)
         }
         for (const cb of session.outputCallbacks) {
           cb(msg)
@@ -864,13 +934,15 @@ export class ConversationService {
       'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
       'CC_TOOLS_SEND_DISABLED_THINKING',
       'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
+      'CLAUDE_CODE_ATTRIBUTION_HEADER',
       'CLAUDE_CODE_MODEL_CONTEXT_WINDOWS',
+      OPENAI_OAUTH_PROVIDER_ENV_KEY,
+      OPENAI_CODEX_OAUTH_FILE_ENV_KEY,
     ] as const
 
-    const cleanEnv = { ...process.env }
+    const cleanEnv = await getProcessEnvWithTerminalShellEnvironment()
     delete cleanEnv.CLAUDE_CODE_OAUTH_TOKEN
-    const shouldStripProviderEnv = this.shouldStripInheritedProviderEnv(options?.providerId)
-    if (shouldStripProviderEnv) {
+    if (this.shouldStripInheritedProviderEnv(options?.providerId)) {
       for (const key of PROVIDER_ENV_KEYS) {
         delete cleanEnv[key]
       }
@@ -890,16 +962,15 @@ export class ConversationService {
       typeof options?.providerId === 'string'
         ? await this.providerService.getProviderRuntimeEnv(options.providerId)
         : null
+    const networkEnv = buildNetworkEnvironment(await loadNetworkSettings())
     if (explicitProviderEnv && options?.model?.trim()) {
       explicitProviderEnv.ANTHROPIC_MODEL = options.model.trim()
     }
-
-    const shouldUseOfficialAuth =
-      !explicitProviderEnv &&
-      (options?.providerId === null || !shouldStripProviderEnv)
-    const officialAuthToken = shouldUseOfficialAuth
-      ? await hahaOAuthService.ensureFreshAccessToken()
-      : null
+    const attributionHeaderEnv = attributionHeaderEnvForModel(
+      options?.model?.trim() ||
+        explicitProviderEnv?.ANTHROPIC_MODEL ||
+        cleanEnv.ANTHROPIC_MODEL,
+    )
 
     const cliDiagnosticsPath = diagnosticsService.getCliDiagnosticsPath()
     try {
@@ -913,6 +984,7 @@ export class ConversationService {
       CLAUDE_CODE_ENABLE_TASKS: '1',
       CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: '1',
       CLAUDE_CODE_DIAGNOSTICS_FILE: cliDiagnosticsPath,
+      CLAUDE_COWORK_MEMORY_PATH_OVERRIDE: this.resolveDesktopAutoMemoryPath(workDir),
       CALLER_DIR: workDir,
       PWD: workDir,
       ...(sdkUrl
@@ -931,17 +1003,63 @@ export class ConversationService {
       // should come from Desktop-managed config or inherited launch env, not
       // be reintroduced from the repo's .env file.
       CC_TOOLS_SKIP_DOTENV: '1',
-      ...(shouldUseOfficialAuth
-        ? { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' }
-        : {}),
-      ...(officialAuthToken
-        ? { CLAUDE_CODE_OAUTH_TOKEN: officialAuthToken }
-        : {}),
       ...(explicitProviderEnv
         ? { CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: '1' }
         : {}),
+      // "官方" 模式 (cc-tools/settings.json 没 provider env) 下,把 CLI 标记为
+      // managed-OAuth,让它忽略外部 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
+      // 残留、只走用户 /login 的 OAuth token。自定义 provider 模式绝不能设,
+      // 否则 CLI 会忽略 provider 的 AUTH_TOKEN、错误地走 OAuth 打到第三方
+      // endpoint。详见 src/utils/auth.ts isManagedOAuthContext()。
       ...(explicitProviderEnv ?? {}),
+      ...networkEnv,
+      ...(this.shouldMarkManagedOAuth(options?.providerId)
+        ? await this.buildOfficialOAuthEnv()
+        : {}),
+      ...attributionHeaderEnv,
     }
+  }
+
+  private resolveDesktopAutoMemoryPath(workDir: string): string {
+    const memoryProjectRoot = fs.existsSync(workDir)
+      ? findCanonicalGitRoot(workDir) ?? workDir
+      : workDir
+    return (
+      path.join(
+        getClaudeConfigHomeDir(),
+        'projects',
+        sanitizePath(memoryProjectRoot),
+        AUTO_MEMORY_DIRNAME,
+      ) + path.sep
+    ).normalize('NFC')
+  }
+
+  /**
+   * 官方模式下构造 CLI 子进程的 auth env:
+   * - CLAUDE_CODE_ENTRYPOINT=claude-desktop 让 CLI 忽略外部残留 ANTHROPIC_* env
+   * - 如果 haha 自管的 oauth.json 里有可用 token,注入 CLAUDE_CODE_OAUTH_TOKEN
+   *   让 CLI 直接拿 env 里的 token,不碰 Keychain,绕开 macOS ACL 静默拒绝
+   *   (这是 DMG 安装 .app 后 403 "Request not allowed" 的唯一根治方案)
+   */
+  private async buildOfficialOAuthEnv(): Promise<Record<string, string>> {
+    const env: Record<string, string> = {
+      CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
+    }
+    try {
+      // deferred import: avoids instantiating the OAuth singleton on every
+      // ConversationService construction — only loaded when official mode hits.
+      const { hahaOAuthService } = await import('./hahaOAuthService.js')
+      const token = await hahaOAuthService.ensureFreshAccessToken()
+      if (token) {
+        env.CLAUDE_CODE_OAUTH_TOKEN = token
+      }
+    } catch (err) {
+      console.error(
+        '[conversationService] ensureFreshAccessToken failed:',
+        err instanceof Error ? err.message : err,
+      )
+    }
+    return env
   }
 
   private shouldStripInheritedProviderEnv(providerId?: string | null): boolean {
@@ -949,8 +1067,11 @@ export class ConversationService {
       return true
     }
 
-    const providersIndexPath = getCCToolsProvidersPath()
-    const settingsPath = getCCToolsSettingsPath()
+    const configDir =
+      process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
+    const ccHahaDir = path.join(configDir, 'cc-tools')
+    const providersIndexPath = path.join(ccHahaDir, 'providers.json')
+    const settingsPath = path.join(ccHahaDir, 'settings.json')
 
     if (fs.existsSync(providersIndexPath)) {
       return true
@@ -973,10 +1094,54 @@ export class ConversationService {
         'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
         'CC_TOOLS_SEND_DISABLED_THINKING',
         'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
+        'CLAUDE_CODE_ATTRIBUTION_HEADER',
         'CLAUDE_CODE_MODEL_CONTEXT_WINDOWS',
+        OPENAI_OAUTH_PROVIDER_ENV_KEY,
+        OPENAI_CODEX_OAUTH_FILE_ENV_KEY,
       ].some((key) => typeof env[key] === 'string' && env[key]!.trim().length > 0)
     } catch {
       return false
+    }
+  }
+
+  /**
+   * 只有当用户处于"官方"模式(没有激活任何自定义 provider)时,才把 CLI 标记为
+   * managed-OAuth。激活自定义 provider 时 settings.json 里有 ANTHROPIC_AUTH_TOKEN;
+   * 这种情况下 CLI 必须按 token 路径走第三方 endpoint,不能被 managed 规则
+   * 强制切 OAuth。
+   *
+   * 默认 (读不到 settings.json) 按"官方"处理 — 即使用户从未用过 cc-tools
+   * provider 管理,也希望官方 OAuth 能正常工作。
+   */
+  private shouldMarkManagedOAuth(providerId?: string | null): boolean {
+    if (providerId === null) {
+      return true
+    }
+    if (typeof providerId === 'string') {
+      return false
+    }
+
+    const configDir =
+      process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
+    const settingsPath = path.join(configDir, 'cc-tools', 'settings.json')
+    try {
+      const raw = fs.readFileSync(settingsPath, 'utf-8')
+      const parsed = JSON.parse(raw) as { env?: Record<string, string> }
+      const env = parsed.env ?? {}
+      if (env[OPENAI_OAUTH_PROVIDER_ENV_KEY] === '1') {
+        return false
+      }
+      const hasProviderEnv = [
+        'ANTHROPIC_API_KEY',
+        'ANTHROPIC_AUTH_TOKEN',
+        'ANTHROPIC_BASE_URL',
+      ].some(
+        (key) =>
+          typeof env[key] === 'string' && env[key]!.trim().length > 0,
+      )
+      return !hasProviderEnv
+    } catch {
+      return true
     }
   }
 

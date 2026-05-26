@@ -242,6 +242,34 @@ describe('ConversationService', () => {
     ])
   })
 
+  it('should send thinking token controls to active CLI sessions', () => {
+    const svc = new ConversationService() as any
+    const sent: string[] = []
+    svc.sessions.set('session-thinking-control', {
+      sdkSocket: { send: (data: string) => sent.push(data) },
+      pendingOutbound: [],
+    })
+
+    expect(svc.setMaxThinkingTokens('session-thinking-control', 0)).toBe(true)
+    expect(svc.setMaxThinkingTokens('session-thinking-control', null)).toBe(true)
+    expect(svc.setMaxThinkingTokensForActiveSessions(0)).toBe(1)
+
+    expect(sent.map((line) => JSON.parse(line).request)).toEqual([
+      {
+        subtype: 'set_max_thinking_tokens',
+        max_thinking_tokens: 0,
+      },
+      {
+        subtype: 'set_max_thinking_tokens',
+        max_thinking_tokens: null,
+      },
+      {
+        subtype: 'set_max_thinking_tokens',
+        max_thinking_tokens: 0,
+      },
+    ])
+  })
+
   it('should return false when sending interrupt to non-existent session', () => {
     const svc = new ConversationService()
     const result = svc.sendInterrupt('no-such-session')
@@ -321,6 +349,62 @@ describe('ConversationService', () => {
       claude_code_version: 'test-version',
       slash_commands: ['help', 'context'],
     })
+  })
+
+  it('should expose live SDK permission requests for reconnecting clients', () => {
+    const svc = new ConversationService()
+
+    ;(svc as any).sessions.set('session-pending-permission', {
+      proc: { pid: 1 },
+      outputCallbacks: [],
+      workDir: process.cwd(),
+      permissionMode: 'default',
+      sdkToken: 'token',
+      sdkSocket: null,
+      pendingOutbound: [],
+      stderrLines: [],
+      sdkMessages: [],
+      initMessage: null,
+      pendingPermissionRequests: new Map(),
+    })
+
+    ;(svc as any).handleSdkPayload('session-pending-permission', JSON.stringify({
+      type: 'control_request',
+      request_id: 'request-ask-1',
+      request: {
+        subtype: 'can_use_tool',
+        tool_name: 'AskUserQuestion',
+        tool_use_id: 'tool-ask-1',
+        input: {
+          questions: [
+            {
+              header: 'Scope',
+              question: 'Which scope?',
+              options: [{ label: 'A', description: 'First' }, { label: 'B', description: 'Second' }],
+            },
+          ],
+        },
+        description: 'Answer questions?',
+      },
+    }))
+
+    expect(svc.getPendingPermissionRequests('session-pending-permission')).toEqual([
+      {
+        requestId: 'request-ask-1',
+        toolName: 'AskUserQuestion',
+        toolUseId: 'tool-ask-1',
+        input: {
+          questions: [
+            {
+              header: 'Scope',
+              question: 'Which scope?',
+              options: [{ label: 'A', description: 'First' }, { label: 'B', description: 'Second' }],
+            },
+          ],
+        },
+        description: 'Answer questions?',
+      },
+    ])
   })
 
   it('should reconstruct usage and metadata from a persisted transcript', async () => {
@@ -630,13 +714,7 @@ describe('WebSocket Chat Integration', () => {
     }
   }
 
-  async function runTurnUntil(
-    sessionId: string,
-    content: string,
-    shouldResolve: (msg: any, messages: any[]) => boolean,
-    allowError = false,
-    timeoutMs = 30000,
-  ): Promise<any[]> {
+  async function runTurn(sessionId: string, content: string, allowError = false): Promise<any[]> {
     const messages: any[] = []
     const ws = new WebSocket(`${wsUrl}/ws/${sessionId}`)
 
@@ -644,7 +722,7 @@ describe('WebSocket Chat Integration', () => {
       const timeout = setTimeout(() => {
         ws.close()
         reject(new Error(`Timed out waiting for completion for session ${sessionId}`))
-      }, timeoutMs)
+      }, 30000)
 
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data as string)
@@ -660,9 +738,8 @@ describe('WebSocket Chat Integration', () => {
           } else {
             reject(new Error(msg.message))
           }
-          return
         }
-        if (shouldResolve(msg, messages)) {
+        if (msg.type === 'message_complete') {
           clearTimeout(timeout)
           ws.close()
           resolve()
@@ -677,15 +754,6 @@ describe('WebSocket Chat Integration', () => {
     })
 
     return messages
-  }
-
-  async function runTurn(sessionId: string, content: string, allowError = false): Promise<any[]> {
-    return runTurnUntil(
-      sessionId,
-      content,
-      (msg) => msg.type === 'message_complete',
-      allowError,
-    )
   }
 
   async function runTurnUntilComplete(sessionId: string, content: string): Promise<any[]> {
@@ -751,12 +819,7 @@ describe('WebSocket Chat Integration', () => {
   })
 
   afterAll(async () => {
-    await Promise.all(
-      conversationService
-        .getActiveSessions()
-        .map((sessionId) => conversationService.stopSessionAndWait(sessionId)),
-    )
-    server?.stop()
+    server?.stop(true)
     if (tmpDir) {
       await rmWithRetry(tmpDir)
     }
@@ -876,19 +939,13 @@ describe('WebSocket Chat Integration', () => {
       worktree: true,
     })
 
-    const messages = await runTurnUntil(
-      sessionId,
-      'Hello from repository launch test',
-      (msg) => msg.type === 'status' && msg.verb === 'Creating worktree',
-      false,
-      15_000,
-    )
+    const messages = await runTurn(sessionId, 'Hello from repository launch test')
     const statusVerbs = messages
       .filter((msg) => msg.type === 'status')
       .map((msg) => msg.verb)
 
     expect(statusVerbs).toContain('Creating worktree')
-  }, 15_000)
+  })
 
   it('does not emit worktree startup status for an already materialized worktree session', async () => {
     const repoDir = await createCleanGitRepo()
@@ -905,21 +962,16 @@ describe('WebSocket Chat Integration', () => {
       workDir: worktreePath!,
       repository: launchInfo!.repository,
     })
+    await sessionService.deletePlaceholderSessionFiles(sessionId, worktreePath!)
 
-    const messages = await runTurnUntil(
-      sessionId,
-      'Continue in the existing worktree',
-      (msg) => msg.type === 'content_start' || msg.type === 'message_complete',
-      false,
-      15_000,
-    )
+    const messages = await runTurn(sessionId, 'Continue in the existing worktree')
     const statusVerbs = messages
       .filter((msg) => msg.type === 'status')
       .map((msg) => msg.verb)
 
     expect(statusVerbs).toContain('Thinking')
     expect(statusVerbs).not.toContain('Creating worktree')
-  }, 15_000)
+  })
 
   it('keeps the default startup status for current-worktree repository sessions', async () => {
     const repoDir = await createCleanGitRepo()
@@ -928,20 +980,14 @@ describe('WebSocket Chat Integration', () => {
       worktree: false,
     })
 
-    const messages = await runTurnUntil(
-      sessionId,
-      'Hello from current worktree launch test',
-      (msg) => msg.type === 'content_start' || msg.type === 'message_complete',
-      false,
-      15_000,
-    )
+    const messages = await runTurn(sessionId, 'Hello from current worktree launch test')
     const statusVerbs = messages
       .filter((msg) => msg.type === 'status')
       .map((msg) => msg.verb)
 
     expect(statusVerbs).toContain('Thinking')
     expect(statusVerbs).not.toContain('Creating worktree')
-  }, 15_000)
+  })
 
   it('emits the derived session title before the first response completes', async () => {
     const sessionId = `title-fast-${crypto.randomUUID()}`
@@ -984,6 +1030,43 @@ describe('WebSocket Chat Integration', () => {
     expect(titleIndex).toBeLessThan(completionIndex)
   })
 
+  it('uses the /goal objective for the derived session title', async () => {
+    const sessionId = `title-goal-${crypto.randomUUID()}`
+    const messages: any[] = []
+    const ws = new WebSocket(`${wsUrl}/ws/${sessionId}`)
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        ws.close()
+        reject(new Error('Timed out waiting for goal title'))
+      }, 5000)
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data as string)
+        messages.push(msg)
+        if (msg.type === 'connected') {
+          ws.send(JSON.stringify({
+            type: 'user_message',
+            content: '/goal ship the desktop goal card',
+          }))
+          return
+        }
+        if (msg.type === 'session_title_updated') {
+          clearTimeout(timeout)
+          ws.close()
+          resolve()
+        }
+      }
+      ws.onerror = () => {
+        clearTimeout(timeout)
+        reject(new Error(`WebSocket error for goal title session ${sessionId}`))
+      }
+    })
+
+    const title = messages.find((msg) => msg.type === 'session_title_updated')?.title
+    expect(title).toBe('ship the desktop goal card')
+  })
+
   it('should start desktop sessions with disabled thinking when configured', async () => {
     const sessionId = `chat-thinking-disabled-${crypto.randomUUID()}`
     const originalStartSession = conversationService.startSession.bind(conversationService)
@@ -1018,6 +1101,90 @@ describe('WebSocket Chat Integration', () => {
       await fs.writeFile(path.join(tmpDir, 'settings.json'), '{}\n', 'utf-8')
     }
   })
+
+  it('should let the global Thinking setting control DeepSeek desktop sessions', async () => {
+    const providerService = new ProviderService()
+    const provider = await providerService.addProvider({
+      presetId: 'deepseek',
+      name: 'DeepSeek Thinking Toggle',
+      apiKey: 'key-deepseek-toggle',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      apiFormat: 'anthropic',
+      models: {
+        main: 'deepseek-v4-pro',
+        haiku: 'deepseek-v4-flash',
+        sonnet: 'deepseek-v4-pro',
+        opus: 'deepseek-v4-pro',
+      },
+    })
+    await providerService.activateProvider(provider.id)
+
+    const originalStartSession = conversationService.startSession.bind(conversationService)
+    const startOptions: Array<{
+      sessionId: string
+      thinking?: string
+      providerId?: string | null
+    }> = []
+    const sessionIds: string[] = []
+
+    conversationService.startSession = (async function patchedStartSession(
+      sid: string,
+      workDir: string,
+      sdkUrl: string,
+      options?: { permissionMode?: string; model?: string; effort?: string; thinking?: 'enabled' | 'adaptive' | 'disabled'; providerId?: string | null },
+    ) {
+      if (sessionIds.includes(sid)) {
+        startOptions.push({
+          sessionId: sid,
+          thinking: options?.thinking,
+          providerId: options?.providerId,
+        })
+      }
+      return originalStartSession(sid, workDir, sdkUrl, options)
+    }) as typeof conversationService.startSession
+
+    try {
+      const disabledSessionId = `ds-think-off-${crypto.randomUUID()}`
+      sessionIds.push(disabledSessionId)
+      await fs.writeFile(
+        path.join(tmpDir, 'settings.json'),
+        JSON.stringify({ alwaysThinkingEnabled: false }, null, 2),
+        'utf-8',
+      )
+      const disabledMessages = await runTurn(disabledSessionId, 'DeepSeek with global thinking off')
+      expect(disabledMessages.some((m) => m.type === 'message_complete')).toBe(true)
+
+      const enabledSessionId = `ds-think-on-${crypto.randomUUID()}`
+      sessionIds.push(enabledSessionId)
+      await fs.writeFile(
+        path.join(tmpDir, 'settings.json'),
+        JSON.stringify({ alwaysThinkingEnabled: true }, null, 2),
+        'utf-8',
+      )
+      const enabledMessages = await runTurn(enabledSessionId, 'DeepSeek with global thinking on')
+      expect(enabledMessages.some((m) => m.type === 'message_complete')).toBe(true)
+
+      expect(startOptions).toEqual([
+        {
+          sessionId: disabledSessionId,
+          thinking: 'disabled',
+          providerId: provider.id,
+        },
+        {
+          sessionId: enabledSessionId,
+          thinking: undefined,
+          providerId: provider.id,
+        },
+      ])
+    } finally {
+      conversationService.startSession = originalStartSession as typeof conversationService.startSession
+      for (const sessionId of sessionIds) {
+        conversationService.stopSession(sessionId)
+      }
+      await providerService.activateOfficial()
+      await fs.writeFile(path.join(tmpDir, 'settings.json'), '{}\n', 'utf-8')
+    }
+  }, 20_000)
 
   it('should continue chat when SDK init arrives only after the first user turn', async () => {
     const messages = await withMockInitMode('on_first_user', () =>
@@ -1299,7 +1466,7 @@ describe('WebSocket Chat Integration', () => {
     const secondTurn = await runTurn(sessionId, 'reply with second')
     expect(secondTurn.some((m) => m.type === 'message_complete')).toBe(true)
     expect(secondTurn.some((m) => m.type === 'error')).toBe(false)
-  }, 15_000)
+  })
 
   it('should keep a long desktop session alive in a /tmp project across engineering turns', async () => {
     const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-tools-issue247-project-'))
@@ -2300,6 +2467,55 @@ describe('WebSocket Chat Integration', () => {
     }
   }, 20_000)
 
+  it('should preserve ChatGPT Official as the active default runtime after restart', async () => {
+    const providerService = new ProviderService()
+    await providerService.activateProvider('openai-official')
+
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workDir: process.cwd() }),
+    })
+    expect(createRes.status).toBe(201)
+    const { sessionId } = await createRes.json() as { sessionId: string }
+
+    const originalStartSession = conversationService.startSession.bind(conversationService)
+    const startCalls: Array<{
+      sessionId: string
+      options: { permissionMode?: string; model?: string; effort?: string; providerId?: string | null } | undefined
+    }> = []
+
+    conversationService.startSession = (async function patchedStartSession(
+      sid: string,
+      workDir: string,
+      sdkUrl: string,
+      options?: { permissionMode?: string; model?: string; effort?: string; thinking?: 'enabled' | 'adaptive' | 'disabled'; providerId?: string | null },
+    ) {
+      startCalls.push({ sessionId: sid, options })
+      return originalStartSession(sid, workDir, sdkUrl, options)
+    }) as typeof conversationService.startSession
+
+    try {
+      const messages = await runTurn(sessionId, 'default ChatGPT Official runtime')
+
+      expect(startCalls).toHaveLength(1)
+      expect(startCalls[0]).toMatchObject({
+        sessionId,
+        options: {
+          providerId: 'openai-official',
+        },
+      })
+      expect(messages.some((msg) => msg.type === 'message_complete')).toBe(true)
+      await expect(providerService.listProviders()).resolves.toMatchObject({
+        activeId: 'openai-official',
+      })
+    } finally {
+      conversationService.startSession = originalStartSession
+      conversationService.stopSession(sessionId)
+      await providerService.activateOfficial()
+    }
+  }, 20_000)
+
   it('should resume streaming to a reconnected client during an active turn', async () => {
     await withMockStreamDelay(150, async () => {
       const sessionId = `chat-reconnect-${crypto.randomUUID()}`
@@ -2362,6 +2578,84 @@ describe('WebSocket Chat Integration', () => {
       })
 
       expect(firstMessages.some((msg) => msg.type === 'thinking')).toBe(true)
+      expect(secondMessages.some((msg) => msg.type === 'connected')).toBe(true)
+      expect(secondMessages.some((msg) => msg.type === 'content_delta')).toBe(true)
+      expect(secondMessages.some((msg) => msg.type === 'message_complete')).toBe(true)
+    })
+  })
+
+  it('should stream one active turn to multiple connected clients', async () => {
+    await withMockStreamDelay(150, async () => {
+      const sessionId = `chat-multi-client-${crypto.randomUUID()}`
+      const firstMessages: any[] = []
+      const secondMessages: any[] = []
+
+      await new Promise<void>((resolve, reject) => {
+        let secondConnected = false
+        let firstComplete = false
+        let secondComplete = false
+        let ws2: WebSocket | null = null
+
+        const timeout = setTimeout(() => {
+          ws1.close()
+          ws2?.close()
+          reject(new Error(`Timed out waiting for both clients to complete for session ${sessionId}`))
+        }, 10_000)
+
+        const cleanup = () => {
+          if (!firstComplete || !secondComplete) return
+          clearTimeout(timeout)
+          ws1.close()
+          ws2?.close()
+          resolve()
+        }
+
+        const handleFailure = (message: string) => {
+          clearTimeout(timeout)
+          ws1.close()
+          ws2?.close()
+          reject(new Error(message))
+        }
+
+        const ws1 = new WebSocket(`${wsUrl}/ws/${sessionId}`)
+        ws1.onmessage = (event) => {
+          const msg = JSON.parse(event.data as string)
+          firstMessages.push(msg)
+
+          if (msg.type === 'connected') {
+            ws1.send(JSON.stringify({ type: 'user_message', content: 'multi client stream' }))
+            return
+          }
+
+          if (msg.type === 'thinking' && !secondConnected) {
+            secondConnected = true
+            ws2 = new WebSocket(`${wsUrl}/ws/${sessionId}`)
+            ws2.onmessage = (secondEvent) => {
+              const secondMsg = JSON.parse(secondEvent.data as string)
+              secondMessages.push(secondMsg)
+              if (secondMsg.type === 'error') {
+                handleFailure(secondMsg.message)
+                return
+              }
+              if (secondMsg.type === 'message_complete') {
+                secondComplete = true
+                cleanup()
+              }
+            }
+            ws2.onerror = () => handleFailure(`Second WebSocket error for session ${sessionId}`)
+          }
+
+          if (msg.type === 'message_complete') {
+            firstComplete = true
+            cleanup()
+          }
+        }
+
+        ws1.onerror = () => handleFailure(`First WebSocket error for session ${sessionId}`)
+      })
+
+      expect(firstMessages.some((msg) => msg.type === 'content_delta')).toBe(true)
+      expect(firstMessages.some((msg) => msg.type === 'message_complete')).toBe(true)
       expect(secondMessages.some((msg) => msg.type === 'connected')).toBe(true)
       expect(secondMessages.some((msg) => msg.type === 'content_delta')).toBe(true)
       expect(secondMessages.some((msg) => msg.type === 'message_complete')).toBe(true)

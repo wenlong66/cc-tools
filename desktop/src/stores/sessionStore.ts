@@ -1,5 +1,10 @@
 import { create } from 'zustand'
-import { sessionsApi, type BatchDeleteSessionsResponse, type CreateSessionRepositoryOptions } from '../api/sessions'
+import {
+  sessionsApi,
+  type BatchDeleteSessionsResponse,
+  type BranchSessionResponse,
+  type CreateSessionRepositoryOptions,
+} from '../api/sessions'
 import { useSessionRuntimeStore } from './sessionRuntimeStore'
 import { useTabStore } from './tabStore'
 import type { SessionListItem } from '../types/session'
@@ -9,18 +14,23 @@ type CreateSessionOptions = {
   repository?: CreateSessionRepositoryOptions
 }
 
+type BranchSessionResult = Pick<BranchSessionResponse, 'sessionId' | 'title' | 'workDir'>
+
 type SessionStore = {
   sessions: SessionListItem[]
   activeSessionId: string | null
   isLoading: boolean
   error: string | null
-  selectedProjects: string[]
-  availableProjects: string[]
   isBatchMode: boolean
   selectedSessionIds: Set<string>
 
   fetchSessions: (project?: string) => Promise<void>
   createSession: (workDir?: string, options?: CreateSessionOptions) => Promise<string>
+  branchSession: (
+    sourceSessionId: string,
+    targetMessageId: string,
+    options?: { title?: string },
+  ) => Promise<BranchSessionResult>
   deleteSession: (id: string) => Promise<void>
   deleteSessions: (ids: string[]) => Promise<BatchDeleteSessionsResponse>
   enterBatchMode: () => void
@@ -32,7 +42,6 @@ type SessionStore = {
   renameSession: (id: string, title: string) => Promise<void>
   updateSessionTitle: (id: string, title: string) => void
   setActiveSession: (id: string | null) => void
-  setSelectedProjects: (projects: string[]) => void
 }
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
@@ -40,8 +49,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   activeSessionId: null,
   isLoading: false,
   error: null,
-  selectedProjects: [],
-  availableProjects: [],
   isBatchMode: false,
   selectedSessionIds: new Set(),
 
@@ -64,8 +71,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         }
         const sessions = [...byId.values()]
         syncedSessions = sessions
-        const availableProjects = [...new Set(sessions.map((s) => s.projectPath).filter(Boolean))].sort()
-        return { sessions, availableProjects, isLoading: false }
+        return { sessions, isLoading: false }
       })
       syncOpenSessionTabTitles(syncedSessions)
     } catch (err) {
@@ -87,6 +93,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       messageCount: 0,
       projectPath: '',
       workDir: resolvedWorkDir ?? workDir ?? null,
+      projectRoot: resolvedWorkDir ?? workDir ?? null,
       workDirExists: true,
     }
 
@@ -99,6 +106,43 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     void get().fetchSessions()
     return id
+  },
+
+  branchSession: async (sourceSessionId, targetMessageId, options) => {
+    const result = await sessionsApi.branch(sourceSessionId, {
+      targetMessageId,
+      ...(options?.title ? { title: options.title } : {}),
+    })
+    const sourceSession = get().sessions.find((session) => session.id === sourceSessionId)
+    const now = new Date().toISOString()
+    const optimisticSession: SessionListItem = {
+      id: result.sessionId,
+      title: result.title || 'New Session',
+      createdAt: now,
+      modifiedAt: now,
+      messageCount: 0,
+      projectPath: sourceSession?.projectPath ?? '',
+      projectRoot: sourceSession?.projectRoot ?? sourceSession?.workDir ?? result.workDir ?? null,
+      workDir: result.workDir ?? sourceSession?.workDir ?? null,
+      workDirExists: true,
+    }
+
+    set((state) => ({
+      sessions: state.sessions.some((session) => session.id === result.sessionId)
+        ? state.sessions.map((session) =>
+            session.id === result.sessionId
+              ? { ...session, ...optimisticSession }
+              : session)
+        : [optimisticSession, ...state.sessions],
+      activeSessionId: result.sessionId,
+    }))
+
+    void get().fetchSessions()
+    return {
+      sessionId: result.sessionId,
+      title: result.title,
+      workDir: result.workDir,
+    }
   },
 
   deleteSession: async (id: string) => {
@@ -166,7 +210,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   setActiveSession: (id) => set({ activeSessionId: id }),
-  setSelectedProjects: (projects) => set({ selectedProjects: projects }),
 }))
 
 function removeIdsFromSet(selected: Set<string>, ids: string[]): Set<string> {

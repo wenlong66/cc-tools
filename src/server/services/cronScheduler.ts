@@ -21,10 +21,8 @@ import {
   buildClaudeCliArgs,
   resolveClaudeCliLauncher,
 } from '../../utils/desktopBundledCli.js'
-import {
-  getCCToolsSettingsPath,
-  getCCToolsProvidersPath,
-} from '../../utils/envUtils.js'
+import { getProcessEnvWithTerminalShellEnvironment } from '../../utils/terminalShellEnvironment.js'
+import { attributionHeaderEnvForModel } from './attributionHeaderPolicy.js'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -644,7 +642,7 @@ export class CronScheduler {
     workDir: string,
     task: CronTask,
   ): Promise<Record<string, string | undefined>> {
-    const cleanEnv = { ...process.env }
+    const cleanEnv = await getProcessEnvWithTerminalShellEnvironment()
     delete cleanEnv.CLAUDE_CODE_OAUTH_TOKEN
 
     if (this.shouldStripInheritedProviderEnv(task.providerId)) {
@@ -662,6 +660,11 @@ export class CronScheduler {
     if (explicitProviderEnv && task.model?.trim()) {
       explicitProviderEnv.ANTHROPIC_MODEL = task.model.trim()
     }
+    const attributionHeaderEnv = attributionHeaderEnvForModel(
+      task.model?.trim() ||
+        explicitProviderEnv?.ANTHROPIC_MODEL ||
+        cleanEnv.ANTHROPIC_MODEL,
+    )
 
     return {
       ...cleanEnv,
@@ -677,7 +680,15 @@ export class CronScheduler {
           }
         : {}),
       ...(explicitProviderEnv ?? {}),
+      ...(this.shouldMarkManagedOAuth(task.providerId)
+        ? await this.buildOfficialOAuthEnv()
+        : {}),
+      ...attributionHeaderEnv,
     }
+  }
+
+  private getConfigDir(): string {
+    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
   }
 
   private shouldStripInheritedProviderEnv(providerId?: string | null): boolean {
@@ -685,12 +696,13 @@ export class CronScheduler {
       return true
     }
 
-    if (existsSync(getCCToolsProvidersPath())) {
+    const ccHahaDir = path.join(this.getConfigDir(), 'cc-tools')
+    if (existsSync(path.join(ccHahaDir, 'providers.json'))) {
       return true
     }
 
     try {
-      const raw = readFileSync(getCCToolsSettingsPath(), 'utf-8')
+      const raw = readFileSync(path.join(ccHahaDir, 'settings.json'), 'utf-8')
       const parsed = JSON.parse(raw) as { env?: Record<string, string> }
       const env = parsed.env ?? {}
       return Object.entries(env).some(
@@ -702,6 +714,54 @@ export class CronScheduler {
     } catch {
       return false
     }
+  }
+
+  private shouldMarkManagedOAuth(providerId?: string | null): boolean {
+    if (providerId === null) {
+      return true
+    }
+    if (typeof providerId === 'string') {
+      return false
+    }
+
+    try {
+      const raw = readFileSync(
+        path.join(this.getConfigDir(), 'cc-tools', 'settings.json'),
+        'utf-8',
+      )
+      const parsed = JSON.parse(raw) as { env?: Record<string, string> }
+      const env = parsed.env ?? {}
+      const hasProviderEnv = [
+        'ANTHROPIC_API_KEY',
+        'ANTHROPIC_AUTH_TOKEN',
+        'ANTHROPIC_BASE_URL',
+      ].some(
+        (key) =>
+          typeof env[key] === 'string' && env[key]!.trim().length > 0,
+      )
+      return !hasProviderEnv
+    } catch {
+      return true
+    }
+  }
+
+  private async buildOfficialOAuthEnv(): Promise<Record<string, string>> {
+    const env: Record<string, string> = {
+      CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
+    }
+    try {
+      const { hahaOAuthService } = await import('./hahaOAuthService.js')
+      const token = await hahaOAuthService.ensureFreshAccessToken()
+      if (token) {
+        env.CLAUDE_CODE_OAUTH_TOKEN = token
+      }
+    } catch (err) {
+      console.error(
+        '[cronScheduler] ensureFreshAccessToken failed:',
+        err instanceof Error ? err.message : err,
+      )
+    }
+    return env
   }
 
   // ─── Cleanup ───────────────────────────────────────────────────────────────

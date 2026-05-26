@@ -6,8 +6,11 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
+import { createServer } from 'net'
 import { handleHahaOpenAIOAuthApi } from '../api/haha-openai-oauth.js'
 import { hahaOpenAIOAuthService } from '../services/hahaOpenAIOAuthService.js'
+import { startServer } from '../index.js'
+import { ProviderService } from '../services/providerService.js'
 
 let tmpDir: string
 let originalConfigDir: string | undefined
@@ -21,6 +24,8 @@ async function setup() {
 }
 
 async function teardown() {
+  hahaOpenAIOAuthService.dispose()
+  hahaOpenAIOAuthService.resetCallbackPortForTests()
   if (originalConfigDir === undefined) {
     delete process.env.CLAUDE_CONFIG_DIR
   } else {
@@ -44,38 +49,62 @@ function buildReq(
   return { req, url, segments }
 }
 
+async function getFreePort(): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const server = createServer()
+    server.on('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('Failed to allocate test port')))
+        return
+      }
+      const port = address.port
+      server.close(() => resolve(port))
+    })
+  })
+}
+
 describe('POST /api/haha-openai-oauth/start', () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test('returns 410 when OAuth login is disabled', async () => {
+  test('returns authorize URL with PKCE challenge', async () => {
+    const callbackPort = await getFreePort()
+    hahaOpenAIOAuthService.setCallbackPortForTests(callbackPort)
+
     const { req, url, segments } = buildReq(
       'POST',
       '/api/haha-openai-oauth/start',
       { serverPort: 54321 },
     )
     const res = await handleHahaOpenAIOAuthApi(req, url, segments)
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()) as { authorizeUrl: string; state: string }
+    expect(data.authorizeUrl).toContain('code_challenge_method=S256')
+    expect(data.authorizeUrl).toContain(
+      'codex_cli_simplified_flow=true',
+    )
+    expect(data.authorizeUrl).toContain(
+      encodeURIComponent(`http://localhost:${callbackPort}/auth/callback`),
+    )
+    expect(data.authorizeUrl).not.toContain(
+      encodeURIComponent('http://localhost:54321/auth/callback'),
+    )
+    expect(data.authorizeUrl).not.toContain('originator=')
+    expect(data.state).toMatch(/^[a-f0-9]{64}$/)
   })
 
-  test('returns 410 even when serverPort is missing', async () => {
+  test('400 if serverPort missing', async () => {
     const { req, url, segments } = buildReq(
       'POST',
       '/api/haha-openai-oauth/start',
       {},
     )
     const res = await handleHahaOpenAIOAuthApi(req, url, segments)
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string; message?: string }
+    expect(body.error).toBe('BAD_REQUEST')
   })
 })
 
@@ -83,18 +112,15 @@ describe('GET /api/haha-openai-oauth', () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test('returns disabled status when no token file exists', async () => {
+  test('returns loggedIn=false when no token file', async () => {
     const { req, url, segments } = buildReq('GET', '/api/haha-openai-oauth')
     const res = await handleHahaOpenAIOAuthApi(req, url, segments)
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()) as { loggedIn: boolean }
+    expect(data.loggedIn).toBe(false)
   })
 
-  test('returns disabled status even when tokens were previously saved', async () => {
+  test('returns loggedIn=true + metadata when token saved', async () => {
     await hahaOpenAIOAuthService.saveTokens({
       accessToken: 'openai-access-token-xxx',
       refreshToken: 'openai-refresh-token-xxx',
@@ -105,15 +131,22 @@ describe('GET /api/haha-openai-oauth', () => {
 
     const { req, url, segments } = buildReq('GET', '/api/haha-openai-oauth')
     const res = await handleHahaOpenAIOAuthApi(req, url, segments)
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+    expect(res.status).toBe(200)
+    const data = (await res.json()) as {
+      loggedIn: boolean
+      expiresAt: number | null
+      email: string | null
+      accountId: string | null
+    }
+    expect(data.loggedIn).toBe(true)
+    expect(data.email).toBe('test@example.com')
+    expect(data.accountId).toBe('acct_123')
+    // Never leak token values
+    expect(JSON.stringify(data)).not.toContain('openai-access-token')
+    expect(JSON.stringify(data)).not.toContain('openai-refresh-token')
   })
 
-  test('returns disabled status even when a stored token is expired', async () => {
+  test('returns loggedIn=false when stored token is expired and refresh fails', async () => {
     await hahaOpenAIOAuthService.saveTokens({
       accessToken: 'expired-token',
       refreshToken: 'revoked-refresh-token',
@@ -128,12 +161,8 @@ describe('GET /api/haha-openai-oauth', () => {
     const { req, url, segments } = buildReq('GET', '/api/haha-openai-oauth')
     const res = await handleHahaOpenAIOAuthApi(req, url, segments)
 
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ loggedIn: false })
   })
 })
 
@@ -141,7 +170,7 @@ describe('DELETE /api/haha-openai-oauth', () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test('returns disabled response without deleting stored tokens', async () => {
+  test('clears token file', async () => {
     await hahaOpenAIOAuthService.saveTokens({
       accessToken: 'a',
       refreshToken: null,
@@ -153,17 +182,27 @@ describe('DELETE /api/haha-openai-oauth', () => {
     const { req, url, segments } = buildReq('DELETE', '/api/haha-openai-oauth')
     const res = await handleHahaOpenAIOAuthApi(req, url, segments)
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      ok: true,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
-    expect(await hahaOpenAIOAuthService.loadTokens()).toEqual({
-      accessToken: 'a',
-      refreshToken: null,
-      expiresAt: null,
-      email: null,
-      accountId: null,
-    })
+    expect(await hahaOpenAIOAuthService.loadTokens()).toBeNull()
+  })
+})
+
+describe('GET /auth/callback', () => {
+  beforeEach(setup)
+  afterEach(teardown)
+
+  test('routes the OpenAI Codex redirect path to the desktop callback page', async () => {
+    const port = await getFreePort()
+    const originalServerPort = ProviderService.getServerPort()
+    const server = startServer(port, '127.0.0.1')
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/auth/callback`)
+      expect(res.status).toBe(200)
+      const html = await res.text()
+      expect(html).toContain('OpenAI Login Failed')
+      expect(html).toContain('Missing code or state parameter')
+    } finally {
+      server.stop(true)
+      ProviderService.setServerPort(originalServerPort)
+    }
   })
 })

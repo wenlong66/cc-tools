@@ -1,12 +1,20 @@
 /**
  * Haha OpenAI OAuth REST API
  *
- * OAuth login is disabled in CC-Tools.
+ * POST   /api/haha-openai-oauth/start    — 生成 PKCE+state,返回 authorize URL
+ * GET    /auth/callback                  — 用户浏览器 redirect 到此,完成 token 交换
+ * GET    /callback/openai                — 兼容旧路径
+ * GET    /api/haha-openai-oauth          — 查询当前登录状态(不回传 token 本体)
+ * DELETE /api/haha-openai-oauth          — 登出,删除 token 文件
  */
 
-import { errorResponse } from '../middleware/errorHandler.js'
+import { z } from 'zod'
+import { hahaOpenAIOAuthService } from '../services/hahaOpenAIOAuthService.js'
+import { ApiError, errorResponse } from '../middleware/errorHandler.js'
 
-const OAUTH_DISABLED_MESSAGE = 'OAuth login is disabled in CC-Tools; configure an API provider instead.'
+const StartRequestSchema = z.object({
+  serverPort: z.number().int().positive(),
+})
 
 function html(body: string): Response {
   return new Response(body, {
@@ -15,32 +23,50 @@ function html(body: string): Response {
   })
 }
 
-function disabledJson(): Response {
-  return Response.json({
-    loggedIn: false,
-    disabled: true,
-    message: OAUTH_DISABLED_MESSAGE,
-  }, { status: 410 })
-}
-
 export async function handleHahaOpenAIOAuthApi(
   req: Request,
-  _url: URL,
+  url: URL,
   segments: string[],
 ): Promise<Response> {
   try {
-    const action = segments[2]
+    const action = segments[2] // segments: ['api', 'haha-openai-oauth', <action?>]
 
     if (action === 'start' && req.method === 'POST') {
-      return disabledJson()
+      let body: unknown
+      try {
+        body = await req.json()
+      } catch {
+        throw ApiError.badRequest('Invalid JSON body')
+      }
+      const parsed = StartRequestSchema.safeParse(body)
+      if (!parsed.success) {
+        throw ApiError.badRequest('serverPort (positive integer) required')
+      }
+      const session = await hahaOpenAIOAuthService.startSession({
+        serverPort: parsed.data.serverPort,
+      })
+      return Response.json({
+        authorizeUrl: session.authorizeUrl,
+        state: session.state,
+      })
     }
 
     if (action === undefined && req.method === 'GET') {
-      return disabledJson()
+      const tokens = await hahaOpenAIOAuthService.ensureFreshTokens()
+      if (!tokens) {
+        return Response.json({ loggedIn: false })
+      }
+      return Response.json({
+        loggedIn: true,
+        expiresAt: tokens.expiresAt,
+        email: tokens.email,
+        accountId: tokens.accountId,
+      })
     }
 
     if (action === undefined && req.method === 'DELETE') {
-      return Response.json({ ok: true, disabled: true, message: OAUTH_DISABLED_MESSAGE })
+      await hahaOpenAIOAuthService.deleteTokens()
+      return Response.json({ ok: true })
     }
 
     return Response.json({ error: 'Not Found' }, { status: 404 })
@@ -49,13 +75,48 @@ export async function handleHahaOpenAIOAuthApi(
   }
 }
 
-export async function handleHahaOpenAIOAuthCallback(_url: URL): Promise<Response> {
-  return html(renderCallbackPage())
+export async function handleHahaOpenAIOAuthCallback(url: URL): Promise<Response> {
+  const code = url.searchParams.get('code')
+  const state = url.searchParams.get('state')
+  const error = url.searchParams.get('error')
+
+  if (error) {
+    return html(renderCallbackPage(false, `OAuth provider returned: ${error}`))
+  }
+  if (!code || !state) {
+    return html(renderCallbackPage(false, 'Missing code or state parameter'))
+  }
+
+  try {
+    await hahaOpenAIOAuthService.completeSession(code, state)
+    return html(renderCallbackPage(true, null))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return html(renderCallbackPage(false, msg))
+  }
 }
 
-function renderCallbackPage(): string {
+function renderCallbackPage(success: boolean, errorMsg: string | null): string {
+  if (success) {
+    return `<!doctype html>
+<html><head><meta charset="utf-8"><title>OpenAI Login Success</title>
+<style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#fafafa;color:#333}.card{text-align:center;padding:40px;background:white;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.06)}h1{color:#16a34a;margin:0 0 12px}p{color:#666}</style>
+</head><body><div class="card"><h1>✓ OpenAI Login Successful</h1><p>You can close this window and return to CC-Tools.</p></div>
+<script>setTimeout(() => window.close(), 1500)</script>
+</body></html>`
+  }
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>OpenAI OAuth Disabled</title>
-<style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#fafafa;color:#333}.card{text-align:center;padding:40px;background:white;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.06);max-width:560px}h1{color:#dc2626;margin:0 0 12px}p{color:#666;line-height:1.5}</style>
-</head><body><div class="card"><h1>OpenAI OAuth Disabled in CC-Tools</h1><p>CC-Tools no longer supports OpenAI OAuth login in this build.</p><p>Please close this window and configure an API provider instead.</p></div></body></html>`
+<html><head><meta charset="utf-8"><title>OpenAI Login Failed</title>
+<style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#fafafa;color:#333}.card{text-align:center;padding:40px;background:white;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.06)}h1{color:#dc2626;margin:0 0 12px}pre{color:#666;white-space:pre-wrap;word-break:break-word;text-align:left;background:#f5f5f5;padding:12px;border-radius:6px}</style>
+</head><body><div class="card"><h1>✗ OpenAI Login Failed</h1><pre>${escapeHtml(errorMsg ?? 'Unknown error')}</pre></div>
+</body></html>`
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

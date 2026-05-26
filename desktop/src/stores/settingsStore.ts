@@ -3,11 +3,41 @@ import { ApiError } from '../api/client'
 import { settingsApi } from '../api/settings'
 import { modelsApi } from '../api/models'
 import { h5AccessApi } from '../api/h5Access'
-import { isThemeMode, type H5AccessSettings, type PermissionMode, type EffortLevel, type ModelInfo, type ThemeMode, type WebSearchSettings } from '../types/settings'
+import {
+  isThemeMode,
+  type AppMode,
+  type AppModeConfig,
+  type DesktopTerminalSettings,
+  type DesktopTerminalStartupShell,
+  type H5AccessDiagnostics,
+  type H5AccessSettings,
+  type NetworkSettings,
+  type PermissionMode,
+  type EffortLevel,
+  type ModelInfo,
+  type ThemeMode,
+  type UpdateProxyMode,
+  type UpdateProxySettings,
+  type WebSearchSettings,
+} from '../types/settings'
+import { isTauriRuntime } from '../lib/desktopRuntime'
 import type { Locale } from '../i18n'
+import {
+  APP_ZOOM_CONTROL_STEP,
+  DEFAULT_APP_ZOOM,
+  MAX_APP_ZOOM,
+  MIN_APP_ZOOM,
+  applyAppZoomLevel,
+  normalizeAppZoomLevel,
+  readStoredAppZoomLevel,
+} from '../lib/appZoom'
 import { useUIStore } from './uiStore'
 
 const LOCALE_STORAGE_KEY = 'cc-tools-locale'
+export const UI_ZOOM_MIN = MIN_APP_ZOOM
+export const UI_ZOOM_MAX = MAX_APP_ZOOM
+export const UI_ZOOM_STEP = APP_ZOOM_CONTROL_STEP
+export const UI_ZOOM_DEFAULT = DEFAULT_APP_ZOOM
 let desktopNotificationsSaveQueue: Promise<void> = Promise.resolve()
 
 function getStoredLocale(): Locale {
@@ -29,12 +59,20 @@ type SettingsStore = {
   theme: ThemeMode
   skipWebFetchPreflight: boolean
   desktopNotificationsEnabled: boolean
+  desktopTerminal: DesktopTerminalSettings
   webSearch: WebSearchSettings
+  updateProxy: UpdateProxySettings
+  network: NetworkSettings
   h5Access: H5AccessSettings
+  h5AccessDiagnostics: H5AccessDiagnostics | null
   h5AccessError: string | null
   responseLanguage: string
+  uiZoom: number
   isLoading: boolean
   error: string | null
+
+  appMode: AppModeConfig
+  appModeRequiresRestart: boolean
 
   fetchAll: () => Promise<void>
   fetchH5Access: () => Promise<void>
@@ -46,7 +84,10 @@ type SettingsStore = {
   setTheme: (theme: ThemeMode) => Promise<void>
   setSkipWebFetchPreflight: (enabled: boolean) => Promise<void>
   setDesktopNotificationsEnabled: (enabled: boolean) => Promise<void>
+  setDesktopTerminal: (settings: DesktopTerminalSettings) => Promise<void>
   setWebSearch: (settings: WebSearchSettings) => Promise<void>
+  setUpdateProxy: (settings: UpdateProxySettings) => Promise<void>
+  setNetwork: (settings: NetworkSettings) => Promise<void>
   enableH5Access: () => Promise<string>
   disableH5Access: () => Promise<void>
   regenerateH5AccessToken: () => Promise<string>
@@ -55,6 +96,13 @@ type SettingsStore = {
     publicBaseUrl?: string | null
   }) => Promise<void>
   setResponseLanguage: (language: string) => Promise<void>
+  fetchAppMode: () => Promise<void>
+  setAppMode: (mode: AppMode, portableDir?: string | null) => Promise<void>
+  setUiZoom: (zoom: number) => void
+}
+
+type NetworkSettingsInput = Partial<Omit<NetworkSettings, 'proxy'>> & {
+  proxy?: Partial<NetworkSettings['proxy']>
 }
 
 const DEFAULT_H5_ACCESS_SETTINGS: H5AccessSettings = {
@@ -62,6 +110,24 @@ const DEFAULT_H5_ACCESS_SETTINGS: H5AccessSettings = {
   tokenPreview: null,
   allowedOrigins: [],
   publicBaseUrl: null,
+}
+
+const DEFAULT_DESKTOP_TERMINAL_SETTINGS: DesktopTerminalSettings = {
+  startupShell: 'system',
+  customShellPath: '',
+}
+
+const DEFAULT_UPDATE_PROXY_SETTINGS: UpdateProxySettings = {
+  mode: 'system',
+  url: '',
+}
+
+const DEFAULT_NETWORK_SETTINGS: NetworkSettings = {
+  aiRequestTimeoutMs: 120_000,
+  proxy: {
+    mode: 'system',
+    url: '',
+  },
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
@@ -75,12 +141,31 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   theme: useUIStore.getState().theme,
   skipWebFetchPreflight: true,
   desktopNotificationsEnabled: false,
+  desktopTerminal: DEFAULT_DESKTOP_TERMINAL_SETTINGS,
   webSearch: { mode: 'auto', tavilyApiKey: '', braveApiKey: '' },
+  updateProxy: DEFAULT_UPDATE_PROXY_SETTINGS,
+  network: DEFAULT_NETWORK_SETTINGS,
   h5Access: DEFAULT_H5_ACCESS_SETTINGS,
+  h5AccessDiagnostics: null,
   h5AccessError: null,
   responseLanguage: '',
+  uiZoom: readStoredAppZoomLevel(),
   isLoading: false,
   error: null,
+
+  appMode: {
+    mode: 'default',
+    portableDir: null,
+    defaultPortableDir: null,
+    activeConfigDir: null,
+    configDirSource: 'system',
+  },
+  appModeRequiresRestart: false,
+  setUiZoom: (zoom: number) => {
+    const level = normalizeAppZoomLevel(zoom)
+    set({ uiZoom: level })
+    void applyAppZoomLevel(level)
+  },
 
   fetchAll: async () => {
     set({ isLoading: true, error: null })
@@ -94,7 +179,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         settingsApi.getUser(),
         loadH5AccessSettings(previousH5Access),
       ])
-      const theme = isThemeMode(userSettings.theme) ? userSettings.theme : 'light'
+      const theme = isThemeMode(userSettings.theme) ? userSettings.theme : 'white'
       useUIStore.getState().setTheme(theme)
       set({
         permissionMode: mode,
@@ -106,8 +191,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         theme,
         skipWebFetchPreflight: userSettings.skipWebFetchPreflight !== false,
         desktopNotificationsEnabled: userSettings.desktopNotificationsEnabled === true,
+        desktopTerminal: normalizeDesktopTerminalSettings(userSettings.desktopTerminal),
         webSearch: normalizeWebSearchSettings(userSettings.webSearch),
+        updateProxy: normalizeUpdateProxySettings(userSettings.updateProxy),
+        network: normalizeNetworkSettings(userSettings.network),
         h5Access: h5AccessResult.settings,
+        h5AccessDiagnostics: h5AccessResult.diagnostics,
         h5AccessError: h5AccessResult.error,
         responseLanguage: typeof userSettings.language === 'string' ? userSettings.language : '',
         isLoading: false,
@@ -123,7 +212,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   fetchH5Access: async () => {
     const result = await loadH5AccessSettings(get().h5Access)
-    set({ h5Access: result.settings, h5AccessError: result.error })
+    set({
+      h5Access: result.settings,
+      h5AccessDiagnostics: result.diagnostics,
+      h5AccessError: result.error,
+    })
   },
 
   setPermissionMode: async (mode) => {
@@ -156,7 +249,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     const prev = get().thinkingEnabled
     set({ thinkingEnabled: enabled })
     try {
-      await settingsApi.updateUser({ alwaysThinkingEnabled: enabled ? undefined : false })
+      await settingsApi.updateUser({ alwaysThinkingEnabled: enabled })
     } catch {
       set({ thinkingEnabled: prev })
     }
@@ -210,6 +303,18 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
   },
 
+  setDesktopTerminal: async (settings) => {
+    const prev = get().desktopTerminal
+    const next = normalizeDesktopTerminalSettings(settings)
+    set({ desktopTerminal: next })
+    try {
+      await settingsApi.updateUser({ desktopTerminal: next })
+    } catch (error) {
+      set({ desktopTerminal: prev })
+      throw error
+    }
+  },
+
   setWebSearch: async (webSearch) => {
     const prev = get().webSearch
     const next = normalizeWebSearchSettings(webSearch)
@@ -221,6 +326,30 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
   },
 
+  setUpdateProxy: async (settings) => {
+    const prev = get().updateProxy
+    const next = normalizeUpdateProxySettings(settings)
+    set({ updateProxy: next })
+    try {
+      await settingsApi.updateUser({ updateProxy: next })
+    } catch (error) {
+      set({ updateProxy: prev })
+      throw error
+    }
+  },
+
+  setNetwork: async (settings) => {
+    const prev = get().network
+    const next = normalizeNetworkSettings(settings)
+    set({ network: next })
+    try {
+      await settingsApi.updateUser({ network: next })
+    } catch (error) {
+      set({ network: prev })
+      throw error
+    }
+  },
+
   enableH5Access: async () => {
     set({ h5AccessError: null })
     try {
@@ -229,6 +358,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         h5Access: normalizeH5AccessSettings(settings),
         h5AccessError: null,
       })
+      await refreshH5DiagnosticsSilent(set)
       return token
     } catch (error) {
       set({ h5AccessError: getErrorMessage(error, 'Failed to enable H5 access.') })
@@ -244,6 +374,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         h5Access: normalizeH5AccessSettings(settings),
         h5AccessError: null,
       })
+      await refreshH5DiagnosticsSilent(set)
     } catch (error) {
       set({ h5AccessError: getErrorMessage(error, 'Failed to disable H5 access.') })
       throw error
@@ -258,6 +389,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         h5Access: normalizeH5AccessSettings(settings),
         h5AccessError: null,
       })
+      await refreshH5DiagnosticsSilent(set)
       return token
     } catch (error) {
       set({ h5AccessError: getErrorMessage(error, 'Failed to regenerate the H5 token.') })
@@ -273,6 +405,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         h5Access: normalizeH5AccessSettings(settings),
         h5AccessError: null,
       })
+      await refreshH5DiagnosticsSilent(set)
     } catch (error) {
       set({ h5AccessError: getErrorMessage(error, 'Failed to update H5 access settings.') })
       throw error
@@ -288,6 +421,41 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       set({ responseLanguage: prev })
     }
   },
+
+  fetchAppMode: async () => {
+    if (!isTauriRuntime()) return
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const result: AppModeConfig = await invoke('get_app_mode')
+      set({ appMode: result })
+    } catch { /* silently ignore - not in Tauri or command unavailable */ }
+  },
+
+  setAppMode: async (mode, portableDir) => {
+    if (!isTauriRuntime()) return
+    const prev = get().appMode
+    const newMode: AppModeConfig = {
+      ...prev,
+      mode,
+      portableDir: mode === 'portable'
+        ? portableDir ?? prev.defaultPortableDir ?? prev.portableDir
+        : null,
+      activeConfigDir: mode === 'portable'
+        ? portableDir ?? prev.defaultPortableDir ?? prev.portableDir
+        : null,
+      configDirSource: mode === 'portable' ? 'portable' : 'system',
+    }
+    set({ appMode: newMode, appModeRequiresRestart: true })
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('set_app_mode', {
+        mode,
+        portableDir: newMode.portableDir || null,
+      })
+    } catch {
+      set({ appMode: prev, appModeRequiresRestart: false })
+    }
+  },
 }))
 
 function normalizeWebSearchSettings(settings: WebSearchSettings | undefined): WebSearchSettings {
@@ -295,6 +463,54 @@ function normalizeWebSearchSettings(settings: WebSearchSettings | undefined): We
     mode: settings?.mode ?? 'auto',
     tavilyApiKey: settings?.tavilyApiKey ?? '',
     braveApiKey: settings?.braveApiKey ?? '',
+  }
+}
+
+function isUpdateProxyMode(value: unknown): value is UpdateProxyMode {
+  return value === 'system' || value === 'manual'
+}
+
+function normalizeUpdateProxySettings(
+  settings: Partial<UpdateProxySettings> | undefined,
+): UpdateProxySettings {
+  const mode = isUpdateProxyMode(settings?.mode)
+    ? settings.mode
+    : DEFAULT_UPDATE_PROXY_SETTINGS.mode
+  return {
+    mode,
+    url: typeof settings?.url === 'string' ? settings.url.trim() : '',
+  }
+}
+
+function normalizeNetworkSettings(
+  settings: NetworkSettingsInput | undefined,
+): NetworkSettings {
+  const timeout = typeof settings?.aiRequestTimeoutMs === 'number' && Number.isFinite(settings.aiRequestTimeoutMs)
+    ? Math.min(Math.max(Math.round(settings.aiRequestTimeoutMs), 5_000), 600_000)
+    : DEFAULT_NETWORK_SETTINGS.aiRequestTimeoutMs
+  const proxyMode = settings?.proxy?.mode === 'manual' ? 'manual' : 'system'
+
+  return {
+    aiRequestTimeoutMs: timeout,
+    proxy: {
+      mode: proxyMode,
+      url: typeof settings?.proxy?.url === 'string' ? settings.proxy.url.trim() : '',
+    },
+  }
+}
+
+function normalizeDesktopTerminalSettings(
+  settings: Partial<DesktopTerminalSettings> | undefined,
+): DesktopTerminalSettings {
+  const startupShell = isDesktopTerminalStartupShell(settings?.startupShell)
+    ? settings.startupShell
+    : DEFAULT_DESKTOP_TERMINAL_SETTINGS.startupShell
+
+  return {
+    startupShell,
+    customShellPath: typeof settings?.customShellPath === 'string'
+      ? settings.customShellPath
+      : DEFAULT_DESKTOP_TERMINAL_SETTINGS.customShellPath,
   }
 }
 
@@ -307,26 +523,45 @@ function normalizeH5AccessSettings(settings: H5AccessSettings | undefined): H5Ac
   }
 }
 
+async function refreshH5DiagnosticsSilent(
+  set: (partial: Partial<SettingsStore>) => void,
+): Promise<void> {
+  // Best-effort diagnostics refresh. Failure here must not surface as an
+  // error on the main H5 action (enable/disable/regenerate/update), because
+  // the main action has already succeeded by the time we reach this point.
+  try {
+    const response = await h5AccessApi.get()
+    const diagnostics = response?.diagnostics ?? null
+    set({ h5AccessDiagnostics: diagnostics })
+  } catch {
+    // silent: keep previous diagnostics value
+  }
+}
+
 async function loadH5AccessSettings(previousH5Access: H5AccessSettings): Promise<{
   settings: H5AccessSettings
+  diagnostics: H5AccessDiagnostics | null
   error: string | null
 }> {
   try {
-    const { settings } = await h5AccessApi.get()
+    const { settings, diagnostics } = await h5AccessApi.get()
     return {
       settings: normalizeH5AccessSettings(settings),
+      diagnostics: diagnostics ?? null,
       error: null,
     }
   } catch (error) {
     if (isLegacyH5EndpointError(error)) {
       return {
         settings: DEFAULT_H5_ACCESS_SETTINGS,
+        diagnostics: null,
         error: null,
       }
     }
 
     return {
       settings: previousH5Access,
+      diagnostics: null,
       error: getErrorMessage(error, 'Failed to load H5 access settings.'),
     }
   }
@@ -343,4 +578,12 @@ function isLegacyH5EndpointError(error: unknown) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback
+}
+
+function isDesktopTerminalStartupShell(value: unknown): value is DesktopTerminalStartupShell {
+  return value === 'system'
+    || value === 'pwsh'
+    || value === 'powershell'
+    || value === 'cmd'
+    || value === 'custom'
 }
