@@ -19,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   browse: vi.fn(),
   wsSend: vi.fn(),
+  dialogOpen: vi.fn(),
+  webviewDragHandlers: [] as Array<(event: { payload: unknown }) => void>,
+  webviewUnlisten: vi.fn(),
 }))
 
 vi.mock('../../api/sessions', () => ({
@@ -49,6 +52,19 @@ vi.mock('../../api/websocket', () => ({
     clearHandlers: vi.fn(),
     send: mocks.wsSend,
   },
+}))
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: mocks.dialogOpen,
+}))
+
+vi.mock('@tauri-apps/api/webview', () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: vi.fn(async (handler: (event: { payload: unknown }) => void) => {
+      mocks.webviewDragHandlers.push(handler)
+      return mocks.webviewUnlisten
+    }),
+  }),
 }))
 
 vi.mock('../../hooks/useMobileViewport', () => ({
@@ -113,6 +129,8 @@ describe('ChatInput file mentions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.webviewDragHandlers.length = 0
+    delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
     viewportMocks.isMobile = false
     useSettingsStore.setState({ locale: 'en' })
     useChatStore.setState(initialChatState, true)
@@ -281,6 +299,23 @@ describe('ChatInput file mentions', () => {
     })
   })
 
+  it('restores an unsent composer draft after the composer unmounts', async () => {
+    const { unmount } = render(<ChatInput compact />)
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: { value: 'keep this prompt while I inspect another tab', selectionStart: 43 },
+    })
+    expect(input.value).toBe('keep this prompt while I inspect another tab')
+
+    unmount()
+    render(<ChatInput compact />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox')).toHaveValue('keep this prompt while I inspect another tab')
+    })
+  })
+
   it('shows branch and worktree launch controls for an empty active Git session', async () => {
     useSessionStore.setState({
       sessions: [{
@@ -320,9 +355,16 @@ describe('ChatInput file mentions', () => {
 
     render(<ChatInput variant="hero" />)
 
+    const panel = screen.getByTestId('chat-input-panel')
+    expect(panel).toHaveClass('rounded-xl')
+    expect(panel).not.toHaveClass('rounded-b-none')
+
     expect(await screen.findByRole('button', { name: /Select branch: main/ })).toBeInTheDocument()
     expect(screen.getByText('Current worktree')).toBeInTheDocument()
     expect(screen.queryByText('Select a project...')).not.toBeInTheDocument()
+    const branchButton = screen.getByRole('button', { name: /Select branch: main/ })
+    expect(panel).toContainElement(branchButton.parentElement)
+    expect(branchButton.parentElement).toHaveClass('bg-transparent')
   })
 
   it('uses the persisted message count to keep reopened sessions in context mode while history loads', async () => {
@@ -552,6 +594,69 @@ describe('ChatInput file mentions', () => {
     })
   })
 
+  it('inserts queued inline workspace citations at the current cursor and keeps file context attached', async () => {
+    render(<ChatInput compact />)
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: {
+        value: '请看实现',
+        selectionStart: 2,
+        selectionEnd: 2,
+      },
+    })
+    input.setSelectionRange(2, 2)
+
+    act(() => {
+      useChatStore.getState().queueComposerInsertion(sessionId, {
+        text: '@"src/App.tsx"',
+        reference: {
+          kind: 'file',
+          path: 'src/App.tsx',
+          absolutePath: '/repo/src/App.tsx',
+          name: 'App.tsx',
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(input.value).toBe('请看 @"src/App.tsx" 实现')
+    })
+    expect(screen.getByText('App.tsx')).toBeInTheDocument()
+    expect(useWorkspaceChatContextStore.getState().referencesBySession[sessionId]).toMatchObject([
+      {
+        kind: 'file',
+        path: 'src/App.tsx',
+        absolutePath: '/repo/src/App.tsx',
+        name: 'App.tsx',
+      },
+    ])
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(mocks.wsSend).toHaveBeenCalledWith(sessionId, {
+      type: 'user_message',
+      content: '请看 @"src/App.tsx" 实现',
+      attachments: [{
+        type: 'file',
+        name: 'App.tsx',
+        path: '/repo/src/App.tsx',
+        isDirectory: undefined,
+        lineStart: undefined,
+        lineEnd: undefined,
+        note: undefined,
+        quote: undefined,
+      }],
+    })
+    const messages = useChatStore.getState().sessions[sessionId]?.messages ?? []
+    expect(messages[messages.length - 1]).toMatchObject({
+      type: 'user_text',
+      content: '请看 @"src/App.tsx" 实现',
+      modelContent: '@"/repo/src/App.tsx" 请看 @"src/App.tsx" 实现',
+      attachments: [{ name: 'App.tsx', path: 'src/App.tsx' }],
+    })
+  })
+
   it('turns a selected @ directory into a workspace chip and model path reference', async () => {
     mocks.search.mockResolvedValueOnce({
       currentPath: '/repo',
@@ -605,6 +710,160 @@ describe('ChatInput file mentions', () => {
     })
   })
 
+  it('uses native desktop file paths instead of inlining selected files', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    })
+    mocks.dialogOpen.mockResolvedValueOnce([
+      '/Users/nanmi/tmp/large-a.log',
+      'C:\\Users\\Nanmi\\Desktop\\large-b.zip',
+    ])
+
+    render(<ChatInput compact />)
+
+    fireEvent.click(screen.getByLabelText('Open composer tools'))
+    fireEvent.click(screen.getByText('Add files or photos'))
+
+    expect(await screen.findByText('large-a.log')).toBeInTheDocument()
+    expect(await screen.findByText('large-b.zip')).toBeInTheDocument()
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: {
+        value: 'analyze these',
+        selectionStart: 'analyze these'.length,
+      },
+    })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(mocks.wsSend).toHaveBeenCalledWith(sessionId, {
+      type: 'user_message',
+      content: 'analyze these',
+      attachments: [
+        expect.objectContaining({
+          type: 'file',
+          name: 'large-a.log',
+          path: '/Users/nanmi/tmp/large-a.log',
+          data: undefined,
+        }),
+        expect.objectContaining({
+          type: 'file',
+          name: 'large-b.zip',
+          path: 'C:\\Users\\Nanmi\\Desktop\\large-b.zip',
+          data: undefined,
+        }),
+      ],
+    })
+  })
+
+  it('accepts native desktop file drops on the active session composer as path-only attachments', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    })
+
+    render(<ChatInput compact />)
+
+    const panel = screen.getByTestId('chat-input-panel')
+    Object.defineProperty(panel, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 640,
+        bottom: 180,
+        width: 640,
+        height: 180,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+
+    await waitFor(() => {
+      expect(mocks.webviewDragHandlers).toHaveLength(1)
+    })
+
+    act(() => {
+      mocks.webviewDragHandlers[0]?.({
+        payload: { type: 'over', position: { x: 24, y: 24 } },
+      })
+    })
+    expect(screen.getByTestId('chat-input-drop-overlay')).toBeInTheDocument()
+
+    act(() => {
+      mocks.webviewDragHandlers[0]?.({
+        payload: {
+          type: 'drop',
+          position: { x: 24, y: 24 },
+          paths: ['/Users/nanmi/drop/large-a.log'],
+        },
+      })
+    })
+
+    expect(await screen.findByText('large-a.log')).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-input-drop-overlay')).not.toBeInTheDocument()
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: {
+        value: 'analyze dropped file',
+        selectionStart: 'analyze dropped file'.length,
+      },
+    })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(mocks.wsSend).toHaveBeenCalledWith(sessionId, {
+      type: 'user_message',
+      content: 'analyze dropped file',
+      attachments: [
+        expect.objectContaining({
+          type: 'file',
+          name: 'large-a.log',
+          path: '/Users/nanmi/drop/large-a.log',
+          data: undefined,
+        }),
+      ],
+    })
+  })
+
+  it('keeps slash and @ popovers outside the drop target clipping context', async () => {
+    mocks.search.mockResolvedValueOnce({
+      currentPath: '/repo',
+      parentPath: null,
+      query: '',
+      entries: [
+        { name: 'README.md', path: '/repo/README.md', isDirectory: false },
+      ],
+    })
+
+    render(<ChatInput compact />)
+
+    const panel = screen.getByTestId('chat-input-panel')
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+
+    fireEvent.change(input, {
+      target: {
+        value: '/',
+        selectionStart: 1,
+      },
+    })
+    expect(await screen.findByText('/mcp')).toBeInTheDocument()
+    expect(panel).toHaveClass('overflow-visible')
+    expect(panel).not.toHaveClass('overflow-hidden')
+
+    fireEvent.change(input, {
+      target: {
+        value: '@readme',
+        selectionStart: 7,
+      },
+    })
+    expect(await screen.findByText('README.md')).toBeInTheDocument()
+    expect(panel).toHaveClass('overflow-visible')
+    expect(panel).not.toHaveClass('overflow-hidden')
+  })
+
   it('uses larger icon-only mobile action buttons for browser H5 access', async () => {
     viewportMocks.isMobile = true
     mocks.search.mockResolvedValueOnce({
@@ -643,5 +902,62 @@ describe('ChatInput file mentions', () => {
     expect(fileSearchMenu).toHaveClass('min-w-0')
     expect(fileSearchMenu).not.toHaveClass('min-w-[480px]')
     expect(fileSearchMenu).not.toHaveTextContent('Navigate')
+  })
+
+  it('keeps the active-session toolbar in flow so multiline caret cannot render behind controls', async () => {
+    render(<ChatInput />)
+
+    await waitFor(() => {
+      expect(mocks.getGitInfo).toHaveBeenCalledWith(sessionId)
+    })
+
+    const input = screen.getByRole('textbox')
+    const toolbar = screen.getByTestId('chat-input-toolbar')
+
+    expect(toolbar).not.toHaveClass('absolute')
+    expect(toolbar).toHaveClass('mt-2')
+    expect(input).not.toHaveClass('pb-12')
+    expect(input).not.toHaveClass('pb-14')
+  })
+
+  it('prioritizes active-session slash commands by command name when filtering', async () => {
+    useChatStore.setState({
+      sessions: {
+        [sessionId]: {
+          ...useChatStore.getState().sessions[sessionId]!,
+          slashCommands: [
+            {
+              name: 'agent-team-orchestrator',
+              description: 'Agent Teams can use Subagent orchestration.',
+            },
+            {
+              name: 'lark-calendar',
+              description: 'Includes suggestion helpers.',
+            },
+            {
+              name: 'superpowers:brainstorming',
+              description: 'Creative work planning.',
+            },
+          ],
+        },
+      },
+    })
+
+    render(<ChatInput />)
+
+    await waitFor(() => {
+      expect(mocks.getGitInfo).toHaveBeenCalledWith(sessionId)
+    })
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '/su', selectionStart: 3 },
+    })
+
+    await waitFor(() => {
+      const commandButtons = screen
+        .getAllByRole('button')
+        .filter((button) => button.textContent?.startsWith('/'))
+      expect(commandButtons[0]).toHaveTextContent('/superpowers:brainstorming')
+    })
   })
 })

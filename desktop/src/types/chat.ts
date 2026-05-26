@@ -75,6 +75,15 @@ export type ServerMessage =
   | { type: 'message_complete'; usage: TokenUsage }
   | { type: 'thinking'; text: string }
   | { type: 'status'; state: ChatState; verb?: string; elapsed?: number; tokens?: number }
+  | {
+      type: 'api_retry'
+      attempt: number
+      maxRetries: number
+      retryDelayMs: number
+      errorStatus: number | null
+      errorType?: string
+      errorMessage?: string
+    }
   | { type: 'error'; message: string; code: string; retryable?: boolean }
   | { type: 'system_notification'; subtype: string; message?: string; data?: unknown }
   | { type: 'pong' }
@@ -91,7 +100,17 @@ export type TokenUsage = {
   cache_creation_tokens?: number
 }
 
-export type ChatState = 'idle' | 'thinking' | 'tool_executing' | 'streaming' | 'permission_pending'
+export type ChatState = 'idle' | 'thinking' | 'compacting' | 'tool_executing' | 'streaming' | 'permission_pending'
+
+export type ApiRetryState = {
+  attempt: number
+  maxRetries: number
+  retryDelayMs: number
+  errorStatus: number | null
+  errorType?: string
+  errorMessage?: string
+  receivedAt: number
+}
 
 export type TeamMemberStatus = {
   agentId: string
@@ -155,7 +174,51 @@ export type AgentTaskNotification = {
   toolUseId: string
   status: 'completed' | 'failed' | 'stopped'
   summary?: string
+  result?: string
   outputFile?: string
+  usage?: BackgroundAgentTaskUsage
+  timestamp?: string
+}
+
+export type BackgroundAgentTaskUsage = {
+  totalTokens?: number
+  toolUses?: number
+  durationMs?: number
+}
+
+export type BackgroundAgentTask = {
+  taskId: string
+  toolUseId?: string
+  status: 'running' | 'completed' | 'failed' | 'stopped'
+  description?: string
+  taskType?: string
+  workflowName?: string
+  prompt?: string
+  summary?: string
+  lastToolName?: string
+  outputFile?: string
+  usage?: BackgroundAgentTaskUsage
+  startedAt: number
+  updatedAt: number
+}
+
+export type MemoryEventFile = {
+  path: string
+  action?: 'saved' | 'updated' | 'created' | 'deleted' | 'loaded' | 'failed'
+  summary?: string
+}
+
+export type GoalEventAction = 'created' | 'replaced' | 'status' | 'paused' | 'resumed' | 'completed' | 'cleared' | 'message'
+
+export type ActiveGoalState = {
+  action: Exclude<GoalEventAction, 'cleared' | 'message'>
+  status?: string
+  objective?: string
+  budget?: string
+  elapsed?: string
+  continuations?: string
+  message?: string
+  updatedAt: number
 }
 
 // ─── UI Message model (rendered in MessageList) ───────────────────
@@ -168,12 +231,55 @@ export type TaskSummaryItem = {
 }
 
 export type UIMessage =
-  | { id: string; type: 'user_text'; content: string; modelContent?: string; timestamp: number; attachments?: UIAttachment[]; pending?: boolean }
-  | { id: string; type: 'assistant_text'; content: string; timestamp: number; model?: string }
+  | { id: string; type: 'user_text'; content: string; modelContent?: string; transcriptMessageId?: string; timestamp: number; attachments?: UIAttachment[]; pending?: boolean }
+  | { id: string; type: 'assistant_text'; content: string; transcriptMessageId?: string; timestamp: number; model?: string }
   | { id: string; type: 'thinking'; content: string; timestamp: number }
-  | { id: string; type: 'tool_use'; toolName: string; toolUseId: string; input: unknown; timestamp: number; parentToolUseId?: string }
+  | {
+      id: string
+      type: 'tool_use'
+      toolName: string
+      toolUseId: string
+      input: unknown
+      timestamp: number
+      parentToolUseId?: string
+      isPending?: boolean
+      partialInput?: string
+    }
   | { id: string; type: 'tool_result'; toolUseId: string; content: unknown; isError: boolean; timestamp: number; parentToolUseId?: string }
+  | { id: string; type: 'background_task'; task: BackgroundAgentTask; timestamp: number }
   | { id: string; type: 'system'; content: string; timestamp: number }
+  | {
+      id: string
+      type: 'compact_summary'
+      title: string
+      phase?: 'compacting' | 'complete'
+      summary?: string
+      trigger?: 'manual' | 'auto'
+      preTokens?: number
+      messagesSummarized?: number
+      timestamp: number
+    }
+  | {
+      id: string
+      type: 'goal_event'
+      action: GoalEventAction
+      status?: string
+      objective?: string
+      budget?: string
+      elapsed?: string
+      continuations?: string
+      message?: string
+      timestamp: number
+    }
+  | {
+      id: string
+      type: 'memory_event'
+      event: 'saved' | 'updated' | 'loaded' | 'failed'
+      files: MemoryEventFile[]
+      message?: string
+      teamCount?: number
+      timestamp: number
+    }
   | {
       id: string
       type: 'permission_request'

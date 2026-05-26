@@ -67,6 +67,10 @@ describe('Adapters API', () => {
 
     const configPath = path.join(tmpDir, 'adapters.json')
     const stat = await fs.stat(configPath)
+    if (process.platform === 'win32') {
+      expect(stat.isFile()).toBe(true)
+      return
+    }
     expect(stat.mode & 0o777).toBe(0o600)
   })
 

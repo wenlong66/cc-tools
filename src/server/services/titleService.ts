@@ -9,11 +9,16 @@
 import { ProviderService } from './providerService.js'
 import { SettingsService } from './settingsService.js'
 import { sessionService } from './sessionService.js'
-import { PROVIDER_PRESETS } from '../config/providerPresets.js'
-import { isEnvTruthy } from '../../utils/envUtils.js'
+import { hahaOpenAIOAuthService } from './hahaOpenAIOAuthService.js'
+import { isOpenAIOfficialProviderId } from './openaiOfficialProvider.js'
+import { OPENAI_CODEX_API_ENDPOINT } from '../../services/openaiAuth/client.js'
+import { resolveOpenAICodexModel } from '../../services/openaiAuth/models.js'
+import { anthropicToOpenaiResponses } from '../proxy/transform/anthropicToOpenaiResponses.js'
+import { openaiResponsesStreamToAnthropicResponse } from '../proxy/streaming/openaiResponsesStreamToAnthropicResponse.js'
 import { cleanSessionTitleSource, hasSessionTitleMarkup } from '../../utils/sessionTitleText.js'
 
 const TITLE_MAX_LEN = 50
+const TITLE_MAX_OUTPUT_TOKENS = 100
 
 const TITLE_SYSTEM_PROMPT = `Generate a concise, sentence-case title (3-7 words) that captures the main topic or goal of this coding session. The title should be clear enough that the user recognizes the session in a list. Use sentence case: capitalize only the first word and proper nouns.
 
@@ -65,15 +70,24 @@ export async function generateTitle(
     if (!resolvedProvider) {
       const { activeId, providers } = await providerService.listProviders()
       resolvedProvider = activeId
-        ? providers.find((provider) => provider.id === activeId) ?? null
+        ? isOpenAIOfficialProviderId(activeId)
+          ? await providerService.getProvider(activeId)
+          : providers.find((provider) => provider.id === activeId) ?? null
         : null
+    }
+
+    if (resolvedProvider && isOpenAIOfficialProviderId(resolvedProvider.id)) {
+      return await generateOpenAIOfficialTitle(
+        trimmed,
+        resolvedProvider.models.haiku || resolvedProvider.models.main,
+      )
     }
 
     if (!resolvedProvider?.baseUrl || !resolvedProvider?.apiKey) return null
 
     const model = resolvedProvider.models.haiku || resolvedProvider.models.main
     const url = `${resolvedProvider.baseUrl.replace(/\/+$/, '')}/v1/messages`
-    const shouldDisableThinking = await shouldDisableThinkingForTitle(resolvedProvider.presetId)
+    const shouldDisableThinking = await shouldDisableThinkingForTitle()
 
     const response = await fetch(url, {
       method: 'POST',
@@ -104,6 +118,51 @@ export async function generateTitle(
   } catch {
     return null
   }
+}
+
+async function generateOpenAIOfficialTitle(
+  trimmed: string,
+  model: string,
+): Promise<string | null> {
+  const tokens = await hahaOpenAIOAuthService.ensureFreshTokens()
+  if (!tokens?.accessToken) return null
+
+  const mappedModel = resolveOpenAICodexModel(model)
+  const requestBody = anthropicToOpenaiResponses({
+    model: mappedModel,
+    max_tokens: TITLE_MAX_OUTPUT_TOKENS,
+    system: TITLE_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: trimmed.slice(0, 2000) }],
+    stream: true,
+    thinking: { type: 'disabled' },
+  })
+  requestBody.stream = true
+  requestBody.max_output_tokens = TITLE_MAX_OUTPUT_TOKENS
+
+  const headers = new Headers()
+  headers.set('Content-Type', 'application/json')
+  headers.set('Authorization', `Bearer ${tokens.accessToken}`)
+  if (tokens.accountId) {
+    headers.set('ChatGPT-Account-Id', tokens.accountId)
+  }
+
+  const response = await fetch(OPENAI_CODEX_API_ENDPOINT, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(15_000),
+  })
+
+  if (!response.ok || !response.body) return null
+
+  const body = await openaiResponsesStreamToAnthropicResponse(
+    response.body,
+    mappedModel,
+  )
+  const text = body.content.find((b) => b.type === 'text')?.text
+  if (!text) return null
+
+  return parseGeneratedTitleText(text)
 }
 
 export function parseGeneratedTitleText(text: string): string | null {
@@ -177,12 +236,9 @@ function looksLikeStructuredTitleFragment(text: string): boolean {
   )
 }
 
-async function shouldDisableThinkingForTitle(presetId: string): Promise<boolean> {
+async function shouldDisableThinkingForTitle(): Promise<boolean> {
   const settings = await new SettingsService().getUserSettings()
-  if (settings.alwaysThinkingEnabled !== false) return false
-
-  const presetEnv = PROVIDER_PRESETS.find((preset) => preset.id === presetId)?.defaultEnv
-  return isEnvTruthy(presetEnv?.CC_HAHA_SEND_DISABLED_THINKING)
+  return settings.alwaysThinkingEnabled === false
 }
 
 /**

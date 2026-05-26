@@ -10,6 +10,10 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { ProviderService } from './providerService.js'
+import {
+  OPENAI_CODEX_OAUTH_FILE_ENV_KEY,
+  OPENAI_OAUTH_PROVIDER_ENV_KEY,
+} from './openaiOfficialProvider.js'
 import { sessionService } from './sessionService.js'
 import { diagnosticsService } from './diagnosticsService.js'
 import {
@@ -22,11 +26,18 @@ import {
   buildClaudeCliArgs,
   resolveClaudeCliLauncher,
 } from '../../utils/desktopBundledCli.js'
+import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { findCanonicalGitRoot } from '../../utils/git.js'
+import { sanitizePath } from '../../utils/path.js'
+import { getProcessEnvWithTerminalShellEnvironment } from '../../utils/terminalShellEnvironment.js'
+import { attributionHeaderEnvForModel } from './attributionHeaderPolicy.js'
+import { buildNetworkEnvironment, loadNetworkSettings } from './networkSettings.js'
 
 const MAX_CAPTURED_PROCESS_LINES = 80
 const MAX_CAPTURED_SDK_MESSAGES = 40
 const MAX_CAPTURED_SDK_SUMMARY = 20
 const CONTROL_READY_POLL_MS = 50
+const AUTO_MEMORY_DIRNAME = 'memory'
 
 type AttachmentRef = {
   type: 'file' | 'image'
@@ -56,10 +67,20 @@ type SessionProcess = {
     string,
     {
       toolName: string
+      toolUseId?: string
+      description?: string
       input: Record<string, unknown>
       permissionSuggestions?: unknown[]
     }
   >
+}
+
+export type PendingPermissionRequest = {
+  requestId: string
+  toolName: string
+  toolUseId?: string
+  input: Record<string, unknown>
+  description?: string
 }
 
 type SessionStartOptions = {
@@ -436,6 +457,27 @@ export class ConversationService {
     })
   }
 
+  setMaxThinkingTokens(sessionId: string, maxThinkingTokens: number | null): boolean {
+    return this.sendSdkMessage(sessionId, {
+      type: 'control_request',
+      request_id: crypto.randomUUID(),
+      request: {
+        subtype: 'set_max_thinking_tokens',
+        max_thinking_tokens: maxThinkingTokens,
+      },
+    })
+  }
+
+  setMaxThinkingTokensForActiveSessions(maxThinkingTokens: number | null): number {
+    let sent = 0
+    for (const sessionId of this.getActiveSessions()) {
+      if (this.setMaxThinkingTokens(sessionId, maxThinkingTokens)) {
+        sent += 1
+      }
+    }
+    return sent
+  }
+
   sendInterrupt(sessionId: string): boolean {
     return this.sendSdkMessage(sessionId, {
       type: 'control_request',
@@ -545,6 +587,19 @@ export class ConversationService {
     return session?.permissionMode || 'default'
   }
 
+  getPendingPermissionRequests(sessionId: string): PendingPermissionRequest[] {
+    const session = this.sessions.get(sessionId)
+    if (!session) return []
+
+    return Array.from(session.pendingPermissionRequests.entries()).map(([requestId, request]) => ({
+      requestId,
+      toolName: request.toolName,
+      ...(request.toolUseId ? { toolUseId: request.toolUseId } : {}),
+      input: request.input,
+      ...(request.description ? { description: request.description } : {}),
+    }))
+  }
+
   authorizeSdkConnection(
     sessionId: string,
     token: string | null | undefined,
@@ -616,14 +671,34 @@ export class ConversationService {
               typeof msg.request.tool_name === 'string'
                 ? msg.request.tool_name
                 : 'Unknown',
+            toolUseId:
+              typeof msg.request.tool_use_id === 'string' && msg.request.tool_use_id.trim()
+                ? msg.request.tool_use_id
+                : undefined,
             input:
               msg.request.input && typeof msg.request.input === 'object'
                 ? (msg.request.input as Record<string, unknown>)
                 : {},
+            description:
+              typeof msg.request.description === 'string' && msg.request.description.trim()
+                ? msg.request.description
+                : undefined,
             permissionSuggestions: Array.isArray(msg.request.permission_suggestions)
               ? msg.request.permission_suggestions
               : undefined,
           })
+        }
+        if (
+          (msg?.type === 'control_cancel_request' || msg?.type === 'control_response') &&
+          typeof msg.request_id === 'string'
+        ) {
+          session.pendingPermissionRequests.delete(msg.request_id)
+        }
+        if (
+          msg?.type === 'control_response' &&
+          typeof msg.response?.request_id === 'string'
+        ) {
+          session.pendingPermissionRequests.delete(msg.response.request_id)
         }
         for (const cb of session.outputCallbacks) {
           cb(msg)
@@ -859,10 +934,13 @@ export class ConversationService {
       'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
       'CC_HAHA_SEND_DISABLED_THINKING',
       'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
+      'CLAUDE_CODE_ATTRIBUTION_HEADER',
       'CLAUDE_CODE_MODEL_CONTEXT_WINDOWS',
+      OPENAI_OAUTH_PROVIDER_ENV_KEY,
+      OPENAI_CODEX_OAUTH_FILE_ENV_KEY,
     ] as const
 
-    const cleanEnv = { ...process.env }
+    const cleanEnv = await getProcessEnvWithTerminalShellEnvironment()
     delete cleanEnv.CLAUDE_CODE_OAUTH_TOKEN
     if (this.shouldStripInheritedProviderEnv(options?.providerId)) {
       for (const key of PROVIDER_ENV_KEYS) {
@@ -884,9 +962,15 @@ export class ConversationService {
       typeof options?.providerId === 'string'
         ? await this.providerService.getProviderRuntimeEnv(options.providerId)
         : null
+    const networkEnv = buildNetworkEnvironment(await loadNetworkSettings())
     if (explicitProviderEnv && options?.model?.trim()) {
       explicitProviderEnv.ANTHROPIC_MODEL = options.model.trim()
     }
+    const attributionHeaderEnv = attributionHeaderEnvForModel(
+      options?.model?.trim() ||
+        explicitProviderEnv?.ANTHROPIC_MODEL ||
+        cleanEnv.ANTHROPIC_MODEL,
+    )
 
     const cliDiagnosticsPath = diagnosticsService.getCliDiagnosticsPath()
     try {
@@ -900,6 +984,7 @@ export class ConversationService {
       CLAUDE_CODE_ENABLE_TASKS: '1',
       CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: '1',
       CLAUDE_CODE_DIAGNOSTICS_FILE: cliDiagnosticsPath,
+      CLAUDE_COWORK_MEMORY_PATH_OVERRIDE: this.resolveDesktopAutoMemoryPath(workDir),
       CALLER_DIR: workDir,
       PWD: workDir,
       ...(sdkUrl
@@ -927,10 +1012,26 @@ export class ConversationService {
       // 否则 CLI 会忽略 provider 的 AUTH_TOKEN、错误地走 OAuth 打到第三方
       // endpoint。详见 src/utils/auth.ts isManagedOAuthContext()。
       ...(explicitProviderEnv ?? {}),
+      ...networkEnv,
       ...(this.shouldMarkManagedOAuth(options?.providerId)
         ? await this.buildOfficialOAuthEnv()
         : {}),
+      ...attributionHeaderEnv,
     }
+  }
+
+  private resolveDesktopAutoMemoryPath(workDir: string): string {
+    const memoryProjectRoot = fs.existsSync(workDir)
+      ? findCanonicalGitRoot(workDir) ?? workDir
+      : workDir
+    return (
+      path.join(
+        getClaudeConfigHomeDir(),
+        'projects',
+        sanitizePath(memoryProjectRoot),
+        AUTO_MEMORY_DIRNAME,
+      ) + path.sep
+    ).normalize('NFC')
   }
 
   /**
@@ -993,7 +1094,10 @@ export class ConversationService {
         'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
         'CC_HAHA_SEND_DISABLED_THINKING',
         'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
+        'CLAUDE_CODE_ATTRIBUTION_HEADER',
         'CLAUDE_CODE_MODEL_CONTEXT_WINDOWS',
+        OPENAI_OAUTH_PROVIDER_ENV_KEY,
+        OPENAI_CODEX_OAUTH_FILE_ENV_KEY,
       ].some((key) => typeof env[key] === 'string' && env[key]!.trim().length > 0)
     } catch {
       return false
@@ -1024,6 +1128,9 @@ export class ConversationService {
       const raw = fs.readFileSync(settingsPath, 'utf-8')
       const parsed = JSON.parse(raw) as { env?: Record<string, string> }
       const env = parsed.env ?? {}
+      if (env[OPENAI_OAUTH_PROVIDER_ENV_KEY] === '1') {
+        return false
+      }
       const hasProviderEnv = [
         'ANTHROPIC_API_KEY',
         'ANTHROPIC_AUTH_TOKEN',
