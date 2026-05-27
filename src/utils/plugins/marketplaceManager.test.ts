@@ -19,7 +19,7 @@ describe('marketplace cache deletion safety', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'marketplace-cache-safe-'))
     originalConfigDir = process.env.CLAUDE_CONFIG_DIR
     originalPluginCacheDir = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
-    process.env.CLAUDE_CONFIG_DIR = path.join(tempDir, '.claude')
+    process.env.CLAUDE_CONFIG_DIR = path.join(tempDir, '.cc-tools')
     delete process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
     clearMarketplacesCache()
   })
@@ -43,7 +43,7 @@ describe('marketplace cache deletion safety', () => {
     const cacheDir = getMarketplacesCacheDir()
     expect(isStrictMarketplaceCachePath(cacheDir)).toBe(false)
     expect(isStrictMarketplaceCachePath(path.join(cacheDir, 'official'))).toBe(true)
-    expect(isStrictMarketplaceCachePath(path.join(tempDir, '.claude'))).toBe(false)
+    expect(isStrictMarketplaceCachePath(path.join(tempDir, '.cc-tools'))).toBe(false)
   })
 
   test('does not delete the marketplace cache root from corrupted stored state', async () => {
@@ -65,7 +65,7 @@ describe('marketplace cache deletion safety', () => {
     )
 
     const marketplaceRoot = path.join(tempDir, 'local-marketplace')
-    const marketplaceJson = path.join(marketplaceRoot, '.claude-plugin', 'marketplace.json')
+    const marketplaceJson = path.join(marketplaceRoot, '.cc-tools-plugin', 'marketplace.json')
     await fs.mkdir(path.dirname(marketplaceJson), { recursive: true })
     await fs.writeFile(
       marketplaceJson,

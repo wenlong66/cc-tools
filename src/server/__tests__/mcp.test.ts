@@ -141,7 +141,7 @@ describe('MCP API', () => {
       expect(disableRes.status).toBe(200)
 
       const rawConfig = JSON.parse(
-        await fs.readFile(path.join(tmpDir, '.claude.json'), 'utf8'),
+        await fs.readFile(path.join(tmpDir, '.cc-tools.json'), 'utf8'),
       )
 
       expect(rawConfig.projects?.[projectA]?.mcpServers?.['scoped-server']).toBeUndefined()

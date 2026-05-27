@@ -14,11 +14,11 @@ const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in windo
 const isWindows = typeof navigator !== 'undefined' && /Win/.test(navigator.platform)
 const SESSION_LIST_AUTO_REFRESH_MS = 30_000
 const SESSION_LIST_FOCUS_REFRESH_MIN_MS = 5_000
-const PROJECT_ORDER_STORAGE_KEY = 'cc-haha-sidebar-project-order'
-const PROJECT_PINNED_STORAGE_KEY = 'cc-haha-sidebar-pinned-projects'
-const PROJECT_HIDDEN_STORAGE_KEY = 'cc-haha-sidebar-hidden-projects'
-const PROJECT_ORGANIZATION_STORAGE_KEY = 'cc-haha-sidebar-project-organization'
-const PROJECT_SORT_STORAGE_KEY = 'cc-haha-sidebar-project-sort'
+const PROJECT_ORDER_STORAGE_KEY = 'cc-tools-sidebar-project-order'
+const PROJECT_PINNED_STORAGE_KEY = 'cc-tools-sidebar-pinned-projects'
+const PROJECT_HIDDEN_STORAGE_KEY = 'cc-tools-sidebar-hidden-projects'
+const PROJECT_ORGANIZATION_STORAGE_KEY = 'cc-tools-sidebar-project-organization'
+const PROJECT_SORT_STORAGE_KEY = 'cc-tools-sidebar-project-sort'
 const PROJECT_GROUP_VISIBLE_COUNT = 6
 const PROJECT_GROUP_SCROLL_COUNT = 12
 
@@ -625,7 +625,7 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
               className={`sidebar-copy ${expanded ? 'sidebar-copy--visible' : 'sidebar-copy--hidden'} text-[13px] font-semibold tracking-tight text-[var(--color-text-primary)]`}
               style={{ fontFamily: 'var(--font-headline)' }}
             >
-              Claude Code <span className="text-[var(--color-primary-container)]">Haha</span>
+              Claude Code <span className="text-[var(--color-primary-container)]">CC-Tools</span>
             </span>
           </div>
           <div className={`flex items-center ${expanded ? 'gap-1.5' : 'flex-col gap-2'}`}>
@@ -1738,7 +1738,7 @@ function projectSubtitle(projectRoot: string | null | undefined, fallbackKey: st
 
 function isWorktreeSession(session: SessionListItem): boolean {
   if (!session.workDir) return false
-  if (/[\\/]\.claude[\\/]worktrees[\\/]/.test(session.workDir)) return true
+  if (/[\\/]\.cc-tools[\\/]worktrees[\\/]/.test(session.workDir)) return true
   if (!session.projectRoot || session.workDir === session.projectRoot) return false
   return !isSameOrChildPath(session.workDir, session.projectRoot)
 }

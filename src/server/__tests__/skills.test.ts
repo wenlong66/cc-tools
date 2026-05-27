@@ -111,7 +111,7 @@ describe('Skills API', () => {
 
   it('lists user skills installed through a directory symlink or junction', async () => {
     const linkedSkillsRoot = path.join(tmpHome, '.agents', 'skills')
-    const userSkillsRoot = path.join(tmpHome, '.claude', 'skills')
+    const userSkillsRoot = path.join(tmpHome, '.cc-tools', 'skills')
     const projectRoot = path.join(tmpHome, 'workspace')
     const cwd = path.join(projectRoot, 'packages', 'app')
 
@@ -172,20 +172,20 @@ describe('Skills API', () => {
   it('lists plugin skills after reload rereads an external enable toggle', async () => {
     const marketplaceRoot = path.join(tmpHome, 'marketplace-root')
     const pluginRoot = path.join(marketplaceRoot, 'plugins', 'draw')
-    const pluginsDir = path.join(tmpHome, '.claude', 'plugins')
+    const pluginsDir = path.join(tmpHome, '.cc-tools', 'plugins')
     const marketplaceFile = path.join(
       marketplaceRoot,
-      '.claude-plugin',
+      '.cc-tools-plugin',
       'marketplace.json',
     )
 
-    await fs.mkdir(path.join(pluginRoot, '.claude-plugin'), { recursive: true })
+    await fs.mkdir(path.join(pluginRoot, '.cc-tools-plugin'), { recursive: true })
     await fs.mkdir(path.join(pluginRoot, 'skills', 'render'), { recursive: true })
     await fs.mkdir(path.dirname(marketplaceFile), { recursive: true })
     await fs.mkdir(pluginsDir, { recursive: true })
 
     await fs.writeFile(
-      path.join(pluginRoot, '.claude-plugin', 'plugin.json'),
+      path.join(pluginRoot, '.cc-tools-plugin', 'plugin.json'),
       JSON.stringify({
         name: 'draw',
         version: '1.0.0',
@@ -231,7 +231,7 @@ describe('Skills API', () => {
       'utf-8',
     )
 
-    const settingsPath = path.join(tmpHome, '.claude', 'settings.json')
+    const settingsPath = path.join(tmpHome, '.cc-tools', 'settings.json')
     await fs.writeFile(
       settingsPath,
       JSON.stringify({
@@ -283,14 +283,14 @@ describe('Skills API', () => {
   it('lists plugin skills after an external CLI install updates portable config on disk', async () => {
     const marketplaceRoot = path.join(tmpHome, 'marketplace-root')
     const pluginRoot = path.join(marketplaceRoot, 'plugins', 'draw')
-    const pluginsDir = path.join(tmpHome, '.claude', 'plugins')
+    const pluginsDir = path.join(tmpHome, '.cc-tools', 'plugins')
     const marketplaceFile = path.join(
       marketplaceRoot,
-      '.claude-plugin',
+      '.cc-tools-plugin',
       'marketplace.json',
     )
 
-    await fs.mkdir(path.join(pluginRoot, '.claude-plugin'), { recursive: true })
+    await fs.mkdir(path.join(pluginRoot, '.cc-tools-plugin'), { recursive: true })
     await fs.mkdir(path.dirname(marketplaceFile), { recursive: true })
     await fs.mkdir(pluginsDir, { recursive: true })
     await writeSkill(
@@ -299,7 +299,7 @@ describe('Skills API', () => {
       ['---', 'description: Render with the drawing plugin.', '---', '', '# Render'].join('\n'),
     )
     await fs.writeFile(
-      path.join(pluginRoot, '.claude-plugin', 'plugin.json'),
+      path.join(pluginRoot, '.cc-tools-plugin', 'plugin.json'),
       JSON.stringify({
         name: 'draw',
         version: '1.0.0',
@@ -334,7 +334,7 @@ describe('Skills API', () => {
       'utf-8',
     )
 
-    const settingsPath = path.join(tmpHome, '.claude', 'settings.json')
+    const settingsPath = path.join(tmpHome, '.cc-tools', 'settings.json')
     await fs.writeFile(
       settingsPath,
       JSON.stringify({

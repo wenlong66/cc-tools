@@ -280,16 +280,16 @@ function buildManagedSettingsForMigratedProvider(provider: JsonObject | undefine
 
 async function migrateLegacyRootProviders(
   configDir: string,
-  ccHahaDir: string,
+  ccToolsDir: string,
   report: MigrationReport,
 ): Promise<void> {
-  const targetPath = path.join(ccHahaDir, 'providers.json')
+  const targetPath = path.join(ccToolsDir, 'providers.json')
   try {
     await fs.access(targetPath)
     return
   } catch (error) {
     if (errnoCode(error) !== 'ENOENT') {
-      report.failures.push(`cc-haha/providers.json: ${error instanceof Error ? error.message : String(error)}`)
+      report.failures.push(`cc-tools/providers.json: ${error instanceof Error ? error.message : String(error)}`)
       return
     }
   }
@@ -304,9 +304,9 @@ async function migrateLegacyRootProviders(
     if (!migrated) return
 
     await writeJsonFile(targetPath, migrated)
-    report.migratedEntries.push('providers.json -> cc-haha/providers.json')
+    report.migratedEntries.push('providers.json -> cc-tools/providers.json')
 
-    const settingsPath = path.join(ccHahaDir, 'settings.json')
+    const settingsPath = path.join(ccToolsDir, 'settings.json')
     const settings = await readJsonFile(settingsPath).catch(() => ({ missing: false, value: undefined, raw: '' }))
     if (!settings.missing) return
 
@@ -319,7 +319,7 @@ async function migrateLegacyRootProviders(
     )
     if (managedSettings) {
       await writeJsonFile(settingsPath, managedSettings)
-      report.migratedEntries.push('providers.json -> cc-haha/settings.json')
+      report.migratedEntries.push('providers.json -> cc-tools/settings.json')
     }
   } catch (error) {
     if (error instanceof SyntaxError) {

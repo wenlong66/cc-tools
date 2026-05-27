@@ -19,14 +19,14 @@ describe('directory completion', () => {
     const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), 'directory-completion-'))
     cleanupDirs.add(fixtureDir)
 
-    await fs.mkdir(path.join(fixtureDir, '.claude'))
+    await fs.mkdir(path.join(fixtureDir, '.cc-tools'))
     await fs.mkdir(path.join(fixtureDir, '.git'))
     await fs.mkdir(path.join(fixtureDir, 'src'))
     await fs.writeFile(path.join(fixtureDir, '.env'), 'SECRET=example')
 
     await expect(scanDirectory(fixtureDir)).resolves.toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: '.claude', type: 'directory' }),
+        expect.objectContaining({ name: '.cc-tools', type: 'directory' }),
         expect.objectContaining({ name: 'src', type: 'directory' }),
       ]),
     )
@@ -39,7 +39,7 @@ describe('directory completion', () => {
     const completions = await getDirectoryCompletions('./.c', { basePath: fixtureDir })
     expect(completions).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ displayText: '.claude/' }),
+        expect.objectContaining({ displayText: '.cc-tools/' }),
       ]),
     )
     expect(completions.some((completion) => completion.displayText === '.env/')).toBe(false)

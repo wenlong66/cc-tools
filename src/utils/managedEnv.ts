@@ -1,12 +1,10 @@
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { isRemoteManagedSettingsEligible } from '../services/remoteManagedSettings/syncCache.js'
 import { mergeActiveProviderManagedEnv } from '../server/services/providerRuntimeEnv.js'
 import { clearCACertsCache } from './caCerts.js'
 import { getGlobalConfig } from './config.js'
-import {
-  getCCToolsSettingsPath,
-  isEnvTruthy,
-} from './envUtils.js'
+import { getClaudeConfigHomeDir, isEnvTruthy } from './envUtils.js'
 import {
   isProviderManagedEnvVar,
   SAFE_ENV_VARS,
@@ -97,14 +95,15 @@ function filterSettingsEnv(
 }
 
 /**
- * Read env vars from ~/.cc-tools/cc-tools/settings.json (CC-tools
- * provider config). This file is written by ProviderService.syncToSettings() and
+ * Read env vars from ~/.cc-tools/cc-tools/settings.json (CC-Tools-specific provider
+ * config). This file is written by ProviderService.syncToSettings() and
  * contains ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, model defaults, etc.
  * Returns an empty object if the file doesn't exist or is invalid.
  */
-function getCCToolsSettingsEnv(): Record<string, string> {
+function getCcToolsSettingsEnv(): Record<string, string> {
   try {
-    const raw = readFileSync(getCCToolsSettingsPath(), 'utf-8')
+    const ccToolsSettings = join(getClaudeConfigHomeDir(), 'cc-tools', 'settings.json')
+    const raw = readFileSync(ccToolsSettings, 'utf-8')
     const parsed = JSON.parse(raw) as { env?: Record<string, string> }
     const settingsEnv = normalizeLegacyDeepSeekManagedEnv(parsed.env ?? {}).env
     return mergeActiveProviderManagedEnv(settingsEnv, getClaudeConfigHomeDir())
@@ -171,11 +170,11 @@ export function applySafeConfigEnvironmentVariables(): void {
     )
   }
 
-  // Managed provider isolation: apply env from ~/.cc-tools/provider-settings.json
-  // AFTER userSettings so Haha-specific provider config takes priority over
-  // the original Claude Code's settings. This prevents Haha from polluting
+  // cc-tools provider isolation: apply env from ~/.cc-tools/cc-tools/settings.json
+  // AFTER userSettings so CC-Tools-specific provider config takes priority over
+  // the original Claude Code's settings. This prevents CC-Tools from polluting
   // ~/.cc-tools/settings.json while still allowing it to override provider vars.
-  Object.assign(process.env, filterSettingsEnv(getCCToolsSettingsEnv()))
+  Object.assign(process.env, filterSettingsEnv(getCcToolsSettingsEnv()))
 
   // Compute remote-managed-settings eligibility now, with userSettings and
   // flagSettings env applied. Eligibility reads CLAUDE_CODE_USE_BEDROCK,
@@ -219,8 +218,8 @@ export function applyConfigEnvironmentVariables(): void {
   Object.assign(process.env, filterSettingsEnv(getSettings_DEPRECATED()?.env))
 
   // cc-tools provider isolation: same as in applySafeConfigEnvironmentVariables,
-  // apply Haha-specific env last so it overrides the original settings.
-  Object.assign(process.env, filterSettingsEnv(getCCToolsSettingsEnv()))
+  // apply CC-Tools-specific env last so it overrides the original settings.
+  Object.assign(process.env, filterSettingsEnv(getCcToolsSettingsEnv()))
 
   // Clear caches so agents are rebuilt with the new env vars
   clearCACertsCache()

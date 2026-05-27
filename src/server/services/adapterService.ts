@@ -63,9 +63,7 @@ export type AdapterFileConfig = {
 }
 
 function getConfigPath(): string {
-  const configDir =
-    process.env.CLAUDE_CONFIG_DIR ||
-    path.join(os.homedir(), '.cc-tools')
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
   return path.join(configDir, 'adapters.json')
 }
 

@@ -12,8 +12,8 @@ describe('WebSocket memory events', () => {
         type: 'system',
         subtype: 'memory_saved',
         writtenPaths: [
-          '/Users/test/.claude/projects/example/memory/preferences.md',
-          '/Users/test/.claude/projects/example/memory/team/MEMORY.md',
+          '/Users/test/.cc-tools/projects/example/memory/preferences.md',
+          '/Users/test/.cc-tools/projects/example/memory/team/MEMORY.md',
         ],
         teamCount: 1,
         verb: 'Saved',
@@ -28,8 +28,8 @@ describe('WebSocket memory events', () => {
         message: undefined,
         data: {
           writtenPaths: [
-            '/Users/test/.claude/projects/example/memory/preferences.md',
-            '/Users/test/.claude/projects/example/memory/team/MEMORY.md',
+            '/Users/test/.cc-tools/projects/example/memory/preferences.md',
+            '/Users/test/.cc-tools/projects/example/memory/team/MEMORY.md',
           ],
           teamCount: 1,
           verb: 'Saved',

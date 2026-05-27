@@ -66,32 +66,32 @@ describe('desktop persistence migrations', () => {
   })
 
   test('preserves valid app zoom and removes invalid app zoom values', () => {
-    window.localStorage.setItem('cc-haha-app-zoom', '1.2')
+    window.localStorage.setItem('cc-tools-app-zoom', '1.2')
 
     const validReport = runDesktopPersistenceMigrations()
 
-    expect(validReport.migratedKeys).not.toContain('cc-haha-app-zoom')
-    expect(window.localStorage.getItem('cc-haha-app-zoom')).toBe('1.2')
+    expect(validReport.migratedKeys).not.toContain('cc-tools-app-zoom')
+    expect(window.localStorage.getItem('cc-tools-app-zoom')).toBe('1.2')
 
-    window.localStorage.setItem('cc-haha-app-zoom', '4')
+    window.localStorage.setItem('cc-tools-app-zoom', '4')
 
     const invalidReport = runDesktopPersistenceMigrations()
 
-    expect(invalidReport.migratedKeys).toContain('cc-haha-app-zoom')
-    expect(window.localStorage.getItem('cc-haha-app-zoom')).toBeNull()
+    expect(invalidReport.migratedKeys).toContain('cc-tools-app-zoom')
+    expect(window.localStorage.getItem('cc-tools-app-zoom')).toBeNull()
   })
 
   test('migrates the legacy UI zoom key into app zoom storage', () => {
-    window.localStorage.setItem('cc-haha-ui-zoom', '1.25')
+    window.localStorage.setItem('cc-tools-ui-zoom', '1.25')
 
     const report = runDesktopPersistenceMigrations()
 
     expect(report.migratedKeys).toEqual(expect.arrayContaining([
-      'cc-haha-app-zoom',
-      'cc-haha-ui-zoom',
+      'cc-tools-app-zoom',
+      'cc-tools-ui-zoom',
     ]))
-    expect(window.localStorage.getItem('cc-haha-app-zoom')).toBe('1.25')
-    expect(window.localStorage.getItem('cc-haha-ui-zoom')).toBeNull()
+    expect(window.localStorage.getItem('cc-tools-app-zoom')).toBe('1.25')
+    expect(window.localStorage.getItem('cc-tools-ui-zoom')).toBeNull()
   })
 
   test('does not throw if schema version persistence is blocked', () => {
@@ -130,7 +130,7 @@ describe('desktop persistence migrations', () => {
       'cc-tools-session-runtime',
       'cc-tools-theme',
       'cc-tools-locale',
-      'cc-haha-app-zoom',
+      'cc-tools-app-zoom',
       DESKTOP_PERSISTENCE_VERSION_KEY,
     ]))
   })

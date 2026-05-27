@@ -83,12 +83,12 @@ describe('LocalSlashCommandPanel memory context', () => {
       ...baseContext,
       memoryFiles: [
         {
-          path: '/Users/test/.claude/projects/demo/memory/MEMORY.md',
+          path: '/Users/test/.cc-tools/projects/demo/memory/MEMORY.md',
           type: 'project',
           tokens: 4321,
         },
         {
-          path: '/Users/test/.claude/projects/demo/memory/feedback/reuse.md',
+          path: '/Users/test/.cc-tools/projects/demo/memory/feedback/reuse.md',
           type: 'feedback',
           tokens: 98,
         },
@@ -105,7 +105,7 @@ describe('LocalSlashCommandPanel memory context', () => {
 
     expect(await screen.findByText('Memory files')).toBeInTheDocument()
     expect(screen.getByText('MEMORY.md')).toBeInTheDocument()
-    expect(screen.getByText('/Users/test/.claude/projects/demo/memory/MEMORY.md')).toBeInTheDocument()
+    expect(screen.getByText('/Users/test/.cc-tools/projects/demo/memory/MEMORY.md')).toBeInTheDocument()
     expect(screen.getByText('feedback')).toBeInTheDocument()
     expect(screen.getByText('4,321 tokens')).toBeInTheDocument()
 
@@ -113,7 +113,7 @@ describe('LocalSlashCommandPanel memory context', () => {
 
     await waitFor(() => {
       expect(useUIStore.getState().pendingSettingsTab).toBe('memory')
-      expect(useUIStore.getState().pendingMemoryPath).toBe('/Users/test/.claude/projects/demo/memory/MEMORY.md')
+      expect(useUIStore.getState().pendingMemoryPath).toBe('/Users/test/.cc-tools/projects/demo/memory/MEMORY.md')
       expect(useTabStore.getState().activeTabId).toBe(SETTINGS_TAB_ID)
     })
   })

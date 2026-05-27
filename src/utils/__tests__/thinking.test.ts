@@ -82,7 +82,7 @@ describe('provider-aware thinking support', () => {
     process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'deepseek-v4-pro'
     process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES =
       'thinking,effort,adaptive_thinking,max_effort'
-    delete process.env.CC_HAHA_SEND_DISABLED_THINKING
+    delete process.env.CC_TOOLS_SEND_DISABLED_THINKING
     clearCapabilityCache()
 
     expect(modelSupportsThinking('deepseek-v4-pro')).toBe(true)

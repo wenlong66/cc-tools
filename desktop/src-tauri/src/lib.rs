@@ -288,7 +288,7 @@ fn dir_has_portable_data(dir: &Path) -> bool {
     }
     [
         "settings.json",
-        ".claude.json",
+        ".cc-tools.json",
         ".mcp.json",
         WINDOW_STATE_FILE,
         TERMINAL_CONFIG_FILE,
@@ -301,7 +301,7 @@ fn dir_has_portable_data(dir: &Path) -> bool {
         || dir.join("skills").is_dir()
         || dir.join("plugins").is_dir()
         || dir.join("cowork_plugins").is_dir()
-        || dir.join("cc-haha").is_dir()
+        || dir.join("cc-tools").is_dir()
 }
 
 /// Resolve the default portable config directory: exe_dir/CLAUDE_CONFIG_DIR.
@@ -539,7 +539,7 @@ fn get_app_mode(app: AppHandle) -> serde_json::Value {
         .clone()
         .or_else(|| app.path().app_config_dir().ok());
     let config_dir_source = if env_config_dir.is_some() {
-        if std::env::var_os("CC_HAHA_APP_PORTABLE_DIR").is_some() {
+        if std::env::var_os("CC_TOOLS_APP_PORTABLE_DIR").is_some() {
             "portable"
         } else {
             "environment"
@@ -719,7 +719,7 @@ fn is_window_state_visible_on_any_monitor(
 fn window_state_path(app: &AppHandle) -> Option<PathBuf> {
     // honour CLAUDE_CONFIG_DIR so portable installs keep window-state.json
     // and terminal-config.json alongside the config dir instead of
-    // %APPDATA%\com.claude-code-haha.desktop\.
+    // %APPDATA%\com.cc-tools.desktop\.
     resolve_portable_state_path().or_else(|| match app.path().app_config_dir() {
         Ok(dir) => Some(dir.join(WINDOW_STATE_FILE)),
         Err(err) => {
@@ -1357,7 +1357,7 @@ fn home_dir() -> Option<PathBuf> {
 fn claude_config_dir() -> Option<PathBuf> {
     std::env::var_os("CLAUDE_CONFIG_DIR")
         .map(PathBuf::from)
-        .or_else(|| home_dir().map(|path| path.join(".claude")))
+        .or_else(|| home_dir().map(|path| path.join(".cc-tools")))
 }
 
 fn desktop_terminal_settings_path() -> Option<PathBuf> {

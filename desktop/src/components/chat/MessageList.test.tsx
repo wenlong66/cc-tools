@@ -910,7 +910,7 @@ describe('MessageList nested tool calls', () => {
               type: 'memory_event',
               event: 'saved',
               files: [
-                { path: '/Users/test/.claude/projects/example/memory/preferences.md', action: 'saved' },
+                { path: '/Users/test/.cc-tools/projects/example/memory/preferences.md', action: 'saved' },
               ],
               timestamp: 1,
             },
@@ -929,7 +929,7 @@ describe('MessageList nested tool calls', () => {
     fireEvent.click(openButton!)
 
     expect(useUIStore.getState().pendingSettingsTab).toBe('memory')
-    expect(useUIStore.getState().pendingMemoryPath).toBe('/Users/test/.claude/projects/example/memory/preferences.md')
+    expect(useUIStore.getState().pendingMemoryPath).toBe('/Users/test/.cc-tools/projects/example/memory/preferences.md')
     expect(useTabStore.getState().activeTabId).toBe('__settings__')
   })
 
@@ -944,7 +944,7 @@ describe('MessageList nested tool calls', () => {
               toolName: 'Write',
               toolUseId: 'write-memory',
               input: {
-                file_path: '/Users/test/.claude/projects/example/memory/preferences.md',
+                file_path: '/Users/test/.cc-tools/projects/example/memory/preferences.md',
                 content: '# Preferences\n',
               },
               timestamp: 1,
@@ -982,7 +982,7 @@ describe('MessageList nested tool calls', () => {
               type: 'tool_use',
               toolName: 'Read',
               toolUseId: 'read-memory-1',
-              input: { file_path: '/Users/test/.claude/projects/example/memory/MEMORY.md' },
+              input: { file_path: '/Users/test/.cc-tools/projects/example/memory/MEMORY.md' },
               timestamp: 1,
             },
             {
@@ -998,7 +998,7 @@ describe('MessageList nested tool calls', () => {
               type: 'tool_use',
               toolName: 'Read',
               toolUseId: 'read-memory-2',
-              input: { file_path: '/Users/test/.claude/projects/example/memory/workflow.md' },
+              input: { file_path: '/Users/test/.cc-tools/projects/example/memory/workflow.md' },
               timestamp: 3,
             },
           ],
@@ -1024,7 +1024,7 @@ describe('MessageList nested tool calls', () => {
               type: 'tool_use',
               toolName: 'Read',
               toolUseId: 'read-memory',
-              input: { file_path: '/Users/test/.claude/projects/example/memory/MEMORY.md' },
+              input: { file_path: '/Users/test/.cc-tools/projects/example/memory/MEMORY.md' },
               timestamp: 1,
             },
             {

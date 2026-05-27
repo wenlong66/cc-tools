@@ -67,7 +67,7 @@ describe('ProjectFilter', () => {
           realPath: '/Users/nanmi/workspace/myself_code/OpenCutSkill',
           projectName: 'OpenCutSkill',
           isGit: true,
-          repoName: 'NanmiCoder/OpenCutSkill',
+          repoName: 'wenlong66/OpenCutSkill',
           branch: 'main',
           modifiedAt: '2026-04-20T09:00:00.000Z',
           sessionCount: 2,
@@ -82,15 +82,15 @@ describe('ProjectFilter', () => {
     await waitFor(() => {
       expect(screen.getByText('wenlong66/cc-tools')).toBeInTheDocument()
       expect(screen.getByText('/Users/nanmi/workspace/myself_code/cc-tools')).toBeInTheDocument()
-      expect(screen.getByText('NanmiCoder/OpenCutSkill')).toBeInTheDocument()
+      expect(screen.getByText('wenlong66/OpenCutSkill')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /NanmiCoder\/cc-tools/i }))
+    fireEvent.click(screen.getByRole('button', { name: /wenlong66\/cc-tools/i }))
 
     await waitFor(() => {
       expect(useSessionStore.getState().selectedProjects).toEqual(['Users-nanmi-workspace-myself_code-cc-tools'])
     })
 
-    expect(screen.getAllByRole('button', { name: /NanmiCoder\/cc-tools/i })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /wenlong66\/cc-tools/i })).toHaveLength(2)
   })
 })

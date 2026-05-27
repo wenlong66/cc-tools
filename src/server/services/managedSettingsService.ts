@@ -2,7 +2,6 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { getCCToolsSettingsPath } from '../../utils/envUtils.js'
 import { ApiError } from '../middleware/errorHandler.js'
 import { normalizeJsonObject, readRecoverableJsonFile } from './recoverableJsonFile.js'
 import { ensurePersistentStorageUpgraded } from './persistentStorageMigrations.js'
@@ -10,8 +9,12 @@ import { ensurePersistentStorageUpgraded } from './persistentStorageMigrations.j
 export class ManagedSettingsService {
   private static writeLocks = new Map<string, Promise<void>>()
 
+  private getConfigDir(): string {
+    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
+  }
+
   private getSettingsPath(): string {
-    return getCCToolsSettingsPath()
+    return path.join(this.getConfigDir(), 'cc-tools', 'settings.json')
   }
 
   private async withWriteLock<T>(

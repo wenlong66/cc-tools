@@ -17,7 +17,7 @@ describe('deletePluginCache', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'plugin-cache-delete-'))
     originalConfigDir = process.env.CLAUDE_CONFIG_DIR
     originalPluginCacheDir = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
-    process.env.CLAUDE_CONFIG_DIR = path.join(tempDir, '.claude')
+    process.env.CLAUDE_CONFIG_DIR = path.join(tempDir, '.cc-tools')
     delete process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR
   })
 
@@ -37,7 +37,7 @@ describe('deletePluginCache', () => {
   })
 
   test('refuses to delete paths outside the managed plugin cache', async () => {
-    const protectedDir = path.join(tempDir, '.claude')
+    const protectedDir = path.join(tempDir, '.cc-tools')
     const sentinel = path.join(protectedDir, 'settings.json')
     await fs.mkdir(protectedDir, { recursive: true })
     await fs.writeFile(sentinel, '{"keep":true}', 'utf-8')
@@ -52,7 +52,7 @@ describe('deletePluginCache', () => {
   test('deletes only versioned directories under the managed plugin cache', async () => {
     const versionDir = path.join(
       tempDir,
-      '.claude',
+      '.cc-tools',
       'plugins',
       'cache',
       'marketplace',
@@ -66,7 +66,7 @@ describe('deletePluginCache', () => {
     deletePluginCache(versionDir)
 
     await expect(fs.stat(versionDir)).rejects.toThrow()
-    await expect(fs.stat(path.join(tempDir, '.claude'))).resolves.toBeDefined()
+    await expect(fs.stat(path.join(tempDir, '.cc-tools'))).resolves.toBeDefined()
   })
 
   test('rebases installed plugin paths when a portable config directory moves', async () => {

@@ -113,11 +113,11 @@ import { useTabStore } from '../../stores/tabStore'
 import { useUIStore } from '../../stores/uiStore'
 import type { SessionListItem } from '../../types/session'
 
-const PROJECT_ORDER_STORAGE_KEY = 'cc-haha-sidebar-project-order'
-const PROJECT_PINNED_STORAGE_KEY = 'cc-haha-sidebar-pinned-projects'
-const PROJECT_HIDDEN_STORAGE_KEY = 'cc-haha-sidebar-hidden-projects'
-const PROJECT_ORGANIZATION_STORAGE_KEY = 'cc-haha-sidebar-project-organization'
-const PROJECT_SORT_STORAGE_KEY = 'cc-haha-sidebar-project-sort'
+const PROJECT_ORDER_STORAGE_KEY = 'cc-tools-sidebar-project-order'
+const PROJECT_PINNED_STORAGE_KEY = 'cc-tools-sidebar-pinned-projects'
+const PROJECT_HIDDEN_STORAGE_KEY = 'cc-tools-sidebar-hidden-projects'
+const PROJECT_ORGANIZATION_STORAGE_KEY = 'cc-tools-sidebar-project-organization'
+const PROJECT_SORT_STORAGE_KEY = 'cc-tools-sidebar-project-sort'
 
 function makeSession(
   id: string,
@@ -763,7 +763,7 @@ describe('Sidebar', () => {
       sessions: [
         makeSession('source-1', 'Source Session', '/workspace/repo', now),
         {
-          ...makeSession('worktree-1', 'Worktree Session', '/workspace/repo/.claude/worktrees/desktop-main-12345678', now),
+          ...makeSession('worktree-1', 'Worktree Session', '/workspace/repo/.cc-tools/worktrees/desktop-main-12345678', now),
           projectRoot: '/workspace/repo',
         },
         {
@@ -805,7 +805,7 @@ describe('Sidebar', () => {
     const now = new Date().toISOString()
     useSessionStore.setState({
       sessions: [
-        makeSession('child-1', 'Child Session', 'D:\\workspace\\code\\cc-haha', now),
+        makeSession('child-1', 'Child Session', 'D:\\workspace\\code\\cc-tools', now),
       ],
     })
     useTabStore.setState({
@@ -820,7 +820,7 @@ describe('Sidebar', () => {
     })
 
     await waitFor(() => {
-      expect(createSession).toHaveBeenCalledWith('D:\\workspace\\code\\cc-haha')
+      expect(createSession).toHaveBeenCalledWith('D:\\workspace\\code\\cc-tools')
     })
     expect(JSON.parse(window.localStorage.getItem(PROJECT_HIDDEN_STORAGE_KEY) ?? '[]')).toEqual(['D:\\'])
     expect(desktopUiPreferencesApiMock.updateSidebarPreferences).not.toHaveBeenCalled()
@@ -833,7 +833,7 @@ describe('Sidebar', () => {
     useSessionStore.setState({
       sessions: [
         {
-          ...makeSession('running-worktree', 'Running Worktree', '/workspace/repo/.claude/worktrees/desktop-main-12345678', '2026-05-19T07:00:00.000Z'),
+          ...makeSession('running-worktree', 'Running Worktree', '/workspace/repo/.cc-tools/worktrees/desktop-main-12345678', '2026-05-19T07:00:00.000Z'),
           projectRoot: '/workspace/repo',
         },
         makeSession('idle-source', 'Idle Source', '/workspace/repo', '2026-05-19T11:40:00.000Z'),

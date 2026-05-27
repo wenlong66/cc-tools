@@ -237,7 +237,7 @@ describe('ProviderService', () => {
 
       const settings = await readSettings()
       const env = settings.env as Record<string, string>
-      expect(env.CC_HAHA_SEND_DISABLED_THINKING).toBeUndefined()
+      expect(env.CC_TOOLS_SEND_DISABLED_THINKING).toBeUndefined()
       expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES).toBe(
         'thinking,effort,adaptive_thinking,max_effort',
       )
@@ -303,9 +303,9 @@ describe('ProviderService', () => {
 
     describe('ChatGPT Official provider metadata', () => {
       test('normalizes the built-in ChatGPT provider as an active provider id', async () => {
-        await fs.mkdir(path.join(tmpDir, 'cc-haha'), { recursive: true })
+        await fs.mkdir(path.join(tmpDir, 'cc-tools'), { recursive: true })
         await fs.writeFile(
-          path.join(tmpDir, 'cc-haha', 'providers.json'),
+          path.join(tmpDir, 'cc-tools', 'providers.json'),
           JSON.stringify({ activeId: 'openai-official', providers: [] }),
           'utf-8',
         )
@@ -346,9 +346,9 @@ describe('ProviderService', () => {
         const settings = await readSettings()
         expect(config.activeId).toBe('openai-official')
         const env = settings.env as Record<string, string>
-        expect(env.CC_HAHA_OPENAI_OAUTH_PROVIDER).toBe('1')
+        expect(env.CC_TOOLS_OPENAI_OAUTH_PROVIDER).toBe('1')
         expect(env.OPENAI_CODEX_OAUTH_FILE).toBe(
-          path.join(tmpDir, 'cc-haha', 'openai-oauth.json'),
+          path.join(tmpDir, 'cc-tools', 'openai-oauth.json'),
         )
         expect(env.ANTHROPIC_MODEL).toBe('gpt-5.3-codex')
         expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('gpt-5.4-mini')
@@ -385,9 +385,9 @@ describe('ProviderService', () => {
 
         const settings = await readSettings()
         const env = settings.env as Record<string, string>
-        expect(env.CC_HAHA_OPENAI_OAUTH_PROVIDER).toBe('1')
+        expect(env.CC_TOOLS_OPENAI_OAUTH_PROVIDER).toBe('1')
         expect(env.OPENAI_CODEX_OAUTH_FILE).toBe(
-          path.join(tmpDir, 'cc-haha', 'openai-oauth.json'),
+          path.join(tmpDir, 'cc-tools', 'openai-oauth.json'),
         )
         expect(env.ANTHROPIC_BASE_URL).toBeUndefined()
         expect(env.ANTHROPIC_API_KEY).toBeUndefined()
@@ -395,9 +395,9 @@ describe('ProviderService', () => {
       })
 
       test('auth status reports ChatGPT Official from the desktop OpenAI token file', async () => {
-        await fs.mkdir(path.join(tmpDir, 'cc-haha'), { recursive: true })
+        await fs.mkdir(path.join(tmpDir, 'cc-tools'), { recursive: true })
         await fs.writeFile(
-          path.join(tmpDir, 'cc-haha', 'openai-oauth.json'),
+          path.join(tmpDir, 'cc-tools', 'openai-oauth.json'),
           JSON.stringify({
             accessToken: 'openai-access',
             refreshToken: 'openai-refresh',
@@ -437,7 +437,7 @@ describe('ProviderService', () => {
         await svc.activateProvider(provider.id)
 
         const env = (await readSettings()).env as Record<string, string>
-        expect(env.CC_HAHA_OPENAI_OAUTH_PROVIDER).toBeUndefined()
+        expect(env.CC_TOOLS_OPENAI_OAUTH_PROVIDER).toBeUndefined()
         expect(env.OPENAI_CODEX_OAUTH_FILE).toBeUndefined()
         expect(env.ANTHROPIC_BASE_URL).toBe('https://api.example.com')
         expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-test-key-123')

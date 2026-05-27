@@ -373,7 +373,7 @@ describe('chatStore history mapping', () => {
         timestamp: '2026-04-06T00:00:00.000Z',
         content: {
           subtype: 'memory_saved',
-          writtenPaths: ['/Users/test/.claude/projects/example/memory/preferences.md'],
+          writtenPaths: ['/Users/test/.cc-tools/projects/example/memory/preferences.md'],
           teamCount: 0,
         },
       },
@@ -388,7 +388,7 @@ describe('chatStore history mapping', () => {
         event: 'saved',
         files: [
           {
-            path: '/Users/test/.claude/projects/example/memory/preferences.md',
+            path: '/Users/test/.cc-tools/projects/example/memory/preferences.md',
             action: 'saved',
           },
         ],
@@ -2488,8 +2488,8 @@ describe('chatStore history mapping', () => {
       message: 'Saved 2 memories',
       data: {
         writtenPaths: [
-          '/Users/test/.claude/projects/example/memory/preferences.md',
-          '/Users/test/.claude/projects/example/memory/team/MEMORY.md',
+          '/Users/test/.cc-tools/projects/example/memory/preferences.md',
+          '/Users/test/.cc-tools/projects/example/memory/team/MEMORY.md',
         ],
         teamCount: 1,
       },
@@ -2502,8 +2502,8 @@ describe('chatStore history mapping', () => {
         message: 'Saved 2 memories',
         teamCount: 1,
         files: [
-          { path: '/Users/test/.claude/projects/example/memory/preferences.md', action: 'saved' },
-          { path: '/Users/test/.claude/projects/example/memory/team/MEMORY.md', action: 'saved' },
+          { path: '/Users/test/.cc-tools/projects/example/memory/preferences.md', action: 'saved' },
+          { path: '/Users/test/.cc-tools/projects/example/memory/team/MEMORY.md', action: 'saved' },
         ],
       },
     ])

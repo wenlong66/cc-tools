@@ -86,14 +86,14 @@ describe('Plugins API', () => {
     const marketplaceRoot = path.join(tmpDir, 'marketplace-root')
     const pluginRoot = path.join(marketplaceRoot, 'plugins', 'demo')
     const pluginsDir = path.join(tmpDir, 'plugins')
-    const marketplaceFile = path.join(marketplaceRoot, '.claude-plugin', 'marketplace.json')
+    const marketplaceFile = path.join(marketplaceRoot, '.cc-tools-plugin', 'marketplace.json')
 
-    await fs.mkdir(path.join(pluginRoot, '.claude-plugin'), { recursive: true })
+    await fs.mkdir(path.join(pluginRoot, '.cc-tools-plugin'), { recursive: true })
     await fs.mkdir(path.dirname(marketplaceFile), { recursive: true })
     await fs.mkdir(pluginsDir, { recursive: true })
 
     await fs.writeFile(
-      path.join(pluginRoot, '.claude-plugin', 'plugin.json'),
+      path.join(pluginRoot, '.cc-tools-plugin', 'plugin.json'),
       JSON.stringify({
         name: 'demo',
         version: '1.0.0',
@@ -250,18 +250,18 @@ describe('Plugins API', () => {
     const pluginsDir = path.join(tmpDir, 'plugins')
     const marketplaceFile = path.join(
       marketplaceRoot,
-      '.claude-plugin',
+      '.cc-tools-plugin',
       'marketplace.json',
     )
 
-    await fs.mkdir(path.join(pluginRoot, '.claude-plugin'), { recursive: true })
+    await fs.mkdir(path.join(pluginRoot, '.cc-tools-plugin'), { recursive: true })
     await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true })
     await fs.mkdir(path.join(pluginRoot, 'skills', 'paint'), { recursive: true })
     await fs.mkdir(path.dirname(marketplaceFile), { recursive: true })
     await fs.mkdir(pluginsDir, { recursive: true })
 
     await fs.writeFile(
-      path.join(pluginRoot, '.claude-plugin', 'plugin.json'),
+      path.join(pluginRoot, '.cc-tools-plugin', 'plugin.json'),
       JSON.stringify({
         name: 'draw',
         version: '1.0.0',

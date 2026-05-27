@@ -43,7 +43,7 @@
 - **无 ripgrep 环境下的 agents/markdown 加载测试** — failed because: `markdownConfigLoader.ts` 只返回 built-ins，没有在 `rg` 缺失时回退到原生文件搜索
 - **第一次放宽 markdown fallback 的实现** — failed because: 它会对任意异常都 fallback，过度吞错；后续收紧为只处理 `ripgrep is not available`
 - **`repositoryLaunchService.ts` 的路径比较初版** — failed because: Windows 与非 Windows 共用 `toLowerCase()` 归一化会带来跨平台路径判断问题，且 `samePath()` 最初也没有统一走规范化路径比较
-- **`/save-session` 首次按全局目录写入** — failed because: 你拒绝了写入 `~/.claude/sessions`，并明确要求改存到项目内的 `/cc-tools/sessions`
+- **`/save-session` 首次按全局目录写入** — failed because: 你拒绝了写入 `~/.cc-tools/sessions`，并明确要求改存到项目内的 `/cc-tools/sessions`
 
 ---
 
@@ -72,8 +72,8 @@
 | `src/utils/markdownConfigLoader.ts` | ✅ Complete | `rg` 不可用时回退到原生搜索，但不再吞掉其它异常 |
 | `src/server/services/repositoryLaunchService.ts` | ✅ Complete | 路径归一化改为跨平台安全实现，`samePath()` 统一走规范化比较 |
 | `scripts/pr/run-server-tests.ts` | ✅ Complete | server tests 改用 `bun test --isolate`，降低全局状态串扰 |
-| `src/server/__tests__/haha-oauth-api.test.ts` | ✅ Complete | 更新为匹配当前 OAuth disabled 行为 |
-| `src/server/__tests__/haha-openai-oauth-api.test.ts` | ✅ Complete | 更新为匹配当前 OAuth disabled 行为 |
+| `src/server/__tests__/cc-tools-oauth-api.test.ts` | ✅ Complete | 更新为匹配当前 OAuth disabled 行为 |
+| `src/server/__tests__/cc-tools-openai-oauth-api.test.ts` | ✅ Complete | 更新为匹配当前 OAuth disabled 行为 |
 | `src/server/__tests__/sessions.test.ts` | ✅ Complete | 已适配路径归一化与相关行为变更 |
 | `src/server/__tests__/conversations.test.ts` | ✅ Complete | 为 server gate 稳定通过做了相应适配 |
 | `start-web.cmd` | ✅ Complete | 项目根一键启动脚本：新开后端窗口并在当前窗口启动 Web |

@@ -25,7 +25,7 @@ A deep dive into the design and implementation of Claude Code's Channel system f
 
 ## Illustrations
 
-All illustrations use a dark background (#1a1a2e) with Claude Code Haha orange-blue accents (#FF7A00).
+All illustrations use a dark background (#1a1a2e) with CC-Tools orange-blue accents (#FF7A00).
 
 | Image | Description | Document |
 |-------|-------------|----------|

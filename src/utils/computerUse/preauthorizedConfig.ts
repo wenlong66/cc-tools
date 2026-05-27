@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { CuGrantFlags } from '../../vendor/computer-use-mcp/types.js'
-import { getCCToolsComputerUseConfigPath } from '../envUtils.js'
+import { getClaudeConfigHomeDir } from '../envUtils.js'
 
 export type StoredAuthorizedApp = {
   bundleId: string
@@ -25,7 +25,11 @@ export const DEFAULT_DESKTOP_GRANT_FLAGS: CuGrantFlags = {
 }
 
 export function getComputerUseConfigPath(): string {
-  return getCCToolsComputerUseConfigPath()
+  return join(
+    getClaudeConfigHomeDir(),
+    'cc-tools',
+    'computer-use-config.json',
+  )
 }
 
 export function resolveStoredComputerUseConfig(

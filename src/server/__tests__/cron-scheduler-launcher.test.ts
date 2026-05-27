@@ -22,7 +22,7 @@ const originalClaudeCodeEntrypoint = process.env.CLAUDE_CODE_ENTRYPOINT
 const originalHome = process.env.HOME
 const originalShell = process.env.SHELL
 const originalZdotdir = process.env.ZDOTDIR
-const originalDisableTerminalShellEnv = process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
+const originalDisableTerminalShellEnv = process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
 
 const isWindows = process.platform === 'win32'
 const unixOnly = isWindows ? it.skip : it
@@ -102,9 +102,9 @@ function restoreEnv(): void {
     delete process.env.ZDOTDIR
   }
   if (originalDisableTerminalShellEnv) {
-    process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV = originalDisableTerminalShellEnv
+    process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV = originalDisableTerminalShellEnv
   } else {
-    delete process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
+    delete process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
   }
   resetTerminalShellEnvironmentCacheForTests()
 }
@@ -115,7 +115,7 @@ describe('cron scheduler launcher resolution', () => {
   beforeEach(async () => {
     tmpDir = await createTmpDir()
     process.env.CLAUDE_CONFIG_DIR = path.join(tmpDir, 'config')
-    process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV = '1'
+    process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV = '1'
     resetTerminalShellEnvironmentCacheForTests()
   })
 
@@ -385,7 +385,7 @@ describe('cron scheduler launcher resolution', () => {
     )
     await fs.chmod(sidecarPath, 0o755)
 
-    delete process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
+    delete process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
     process.env.HOME = tmpDir
     process.env.SHELL = shellPath
     process.env.PATH = '/usr/bin:/bin'

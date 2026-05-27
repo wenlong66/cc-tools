@@ -356,7 +356,7 @@ export class SessionService {
     if (gitRoot) return gitRoot
 
     if (workDir) {
-      const marker = `${path.sep}.claude${path.sep}worktrees${path.sep}`
+      const marker = `${path.sep}.cc-tools${path.sep}worktrees${path.sep}`
       const markerIndex = canonicalCandidate.indexOf(marker)
       if (markerIndex > 0) return canonicalCandidate.slice(0, markerIndex)
     }

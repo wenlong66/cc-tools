@@ -52,7 +52,7 @@ type BunRuntimeLike = {
 
 const currentFilePath = fileURLToPath(import.meta.url)
 const ROOT_DIR = path.resolve(path.dirname(currentFilePath), '..', '..')
-const LAUNCHER_STATE_PATH = path.join(ROOT_DIR, '.claude', 'dev-launcher-state.json')
+const LAUNCHER_STATE_PATH = path.join(ROOT_DIR, '.cc-tools', 'dev-launcher-state.json')
 const WEB_SERVER_TITLE = 'cc-tools-server'
 const WINDOW_TITLES: Record<LaunchMode, string> = {
   web: 'cc-tools-web',

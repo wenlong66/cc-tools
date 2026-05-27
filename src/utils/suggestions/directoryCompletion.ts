@@ -100,7 +100,7 @@ export async function scanDirectory(
     const fs = getFsImplementation()
     const entries = await fs.readdir(dirPath)
 
-    // Filter for directories only. Dot-prefixed project folders like .claude and .github
+    // Filter for directories only. Dot-prefixed project folders like .cc-tools and .github
     // are valid navigation targets; VCS internals remain hidden.
     const directories = entries
       .filter(entry => entry.isDirectory() && !isVcsMetadataDirectoryName(entry.name))

@@ -3,7 +3,6 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { gzipSync } from 'node:zlib'
 import type { Dirent } from 'node:fs'
-import { getDiagnosticsDir, getCCToolsProvidersPath } from '../../utils/envUtils.js'
 
 export type DiagnosticSeverity = 'debug' | 'info' | 'warn' | 'error'
 
@@ -61,7 +60,7 @@ export class DiagnosticsService {
   private originalConsoleWarn: typeof console.warn | null = null
 
   getLogDir(): string {
-    return getDiagnosticsDir()
+    return path.join(this.getConfigDir(), 'cc-tools', 'diagnostics')
   }
 
   getDiagnosticsPath(): string {
@@ -333,6 +332,10 @@ export class DiagnosticsService {
     await fs.mkdir(this.getExportDir(), { recursive: true })
   }
 
+  private getConfigDir(): string {
+    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
+  }
+
   private formatConsoleArgs(args: unknown[]): string {
     return this.sanitizeString(args.map((arg) => {
       if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack ?? ''}`
@@ -448,7 +451,7 @@ export class DiagnosticsService {
   }
 
   private async buildProvidersSummary(): Promise<Record<string, unknown>> {
-    const providerPath = getCCToolsProvidersPath()
+    const providerPath = path.join(this.getConfigDir(), 'cc-tools', 'providers.json')
     try {
       const raw = await fs.readFile(providerPath, 'utf-8')
       const parsed = JSON.parse(raw) as {

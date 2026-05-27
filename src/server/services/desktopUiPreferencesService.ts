@@ -104,11 +104,11 @@ export class DesktopUiPreferencesService {
   private static writeLocks = new Map<string, Promise<void>>()
 
   private getConfigDir(): string {
-    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+    return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
   }
 
   private getPreferencesPath(): string {
-    return path.join(this.getConfigDir(), 'cc-haha', 'desktop-ui.json')
+    return path.join(this.getConfigDir(), 'cc-tools', 'desktop-ui.json')
   }
 
   private async fileExists(filePath: string): Promise<boolean> {
@@ -163,7 +163,7 @@ export class DesktopUiPreferencesService {
     const existedBeforeRead = await this.fileExists(filePath)
     const preferences = await readRecoverableJsonFile({
       filePath,
-      label: 'cc-haha desktop UI preferences',
+      label: 'cc-tools desktop UI preferences',
       defaultValue: defaultPreferences(),
       normalize: normalizeDesktopUiPreferences,
     })

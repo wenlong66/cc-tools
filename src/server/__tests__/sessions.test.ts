@@ -499,7 +499,7 @@ describe('SessionService', () => {
 
   it('should expose the source project root for persisted worktree sessions', async () => {
     const sourceWorkDir = path.join(tmpDir, 'source-repo')
-    const worktreePath = path.join(sourceWorkDir, '.claude', 'worktrees', 'desktop-main-12345678')
+    const worktreePath = path.join(sourceWorkDir, '.cc-tools', 'worktrees', 'desktop-main-12345678')
     await fs.mkdir(worktreePath, { recursive: true })
     const sessionId = 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee'
     await writeSessionFile(sanitizePath(worktreePath), sessionId, [
@@ -1644,7 +1644,7 @@ describe('SessionService', () => {
   it('createSessionBranch should preserve branch metadata, copied snapshots, and filtered replacements', async () => {
     const sessionId = 'branch-source-session'
     const workDir = path.join(tmpDir, 'branch-source')
-    const worktreePath = path.join(workDir, '.claude', 'worktrees', 'desktop-main-12345678')
+    const worktreePath = path.join(workDir, '.cc-tools', 'worktrees', 'desktop-main-12345678')
     const firstUserId = crypto.randomUUID()
     const firstAssistantId = crypto.randomUUID()
     const firstToolResultId = crypto.randomUUID()
@@ -1896,12 +1896,8 @@ describe('Sessions API', () => {
     expect(body.currentBranch).toBe('main')
     expect(body.branches.some((branch) => branch.name === 'main' && branch.current)).toBe(true)
     expect(body.branches.some((branch) => branch.name === 'feature/rail' && branch.local)).toBe(true)
-    const realWorkDir = (await fs.realpath(workDir)).replaceAll('\\', '/').toLowerCase()
-    expect(
-      body.worktrees.some(
-        (worktree) => worktree.path.replaceAll('\\', '/').toLowerCase() === realWorkDir && worktree.current,
-      ),
-    ).toBe(true)
+    const realWorkDir = await fs.realpath(workDir)
+    expect(body.worktrees.some((worktree) => worktree.path === realWorkDir && worktree.current)).toBe(true)
   })
 
   it('GET /api/sessions/recent-projects should keep pending repository launches on the source project', async () => {
@@ -2397,7 +2393,7 @@ describe('Sessions API', () => {
       'User custom slash command',
     )
     await writeLegacySlashCommand(
-      path.join(workDir, '.claude', 'commands'),
+      path.join(workDir, '.cc-tools', 'commands'),
       'project-probe',
       'Project custom slash command',
     )
@@ -2437,7 +2433,7 @@ describe('Sessions API', () => {
     const workDir = path.join(tmpDir, 'workspace', 'app')
 
     await writeLegacySlashCommand(
-      path.join(workDir, '.claude', 'commands'),
+      path.join(workDir, '.cc-tools', 'commands'),
       'project-probe',
       'Project custom slash command',
     )
@@ -2482,11 +2478,11 @@ describe('Sessions API', () => {
     const pluginsDir = path.join(tmpDir, 'plugins')
     const marketplaceFile = path.join(
       marketplaceRoot,
-      '.claude-plugin',
+      '.cc-tools-plugin',
       'marketplace.json',
     )
 
-    await fs.mkdir(path.join(pluginRoot, '.claude-plugin'), { recursive: true })
+    await fs.mkdir(path.join(pluginRoot, '.cc-tools-plugin'), { recursive: true })
     await fs.mkdir(path.dirname(marketplaceFile), { recursive: true })
     await fs.mkdir(pluginsDir, { recursive: true })
     await fs.mkdir(workDir, { recursive: true })
@@ -2496,7 +2492,7 @@ describe('Sessions API', () => {
       'Superpowers brainstorming skill',
     )
     await fs.writeFile(
-      path.join(pluginRoot, '.claude-plugin', 'plugin.json'),
+      path.join(pluginRoot, '.cc-tools-plugin', 'plugin.json'),
       JSON.stringify({
         name: 'superpowers',
         version: '5.0.7',

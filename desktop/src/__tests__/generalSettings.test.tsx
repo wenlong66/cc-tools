@@ -139,7 +139,7 @@ describe('Settings > General tab', () => {
     tauriCoreMock.invoke.mockReset()
     tauriCoreMock.invoke.mockResolvedValue(undefined)
     tauriDialogMock.open.mockReset()
-    tauriDialogMock.open.mockResolvedValue('/Users/test/cc-haha-data')
+    tauriDialogMock.open.mockResolvedValue('/Users/test/cc-tools-data')
     tauriProcessMock.relaunch.mockReset()
     tauriProcessMock.relaunch.mockResolvedValue(undefined)
     delete (window as unknown as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__
@@ -208,7 +208,7 @@ describe('Settings > General tab', () => {
       appMode: {
         mode: 'default',
         portableDir: null,
-        defaultPortableDir: '/Applications/Claude Code Haha/CLAUDE_CONFIG_DIR',
+        defaultPortableDir: '/Applications/CC-Tools/CLAUDE_CONFIG_DIR',
         activeConfigDir: null,
         configDirSource: 'system',
       },
@@ -218,9 +218,9 @@ describe('Settings > General tab', () => {
         useSettingsStore.setState({
           appMode: {
             mode,
-            portableDir: mode === 'portable' ? portableDir ?? '/Applications/Claude Code Haha/CLAUDE_CONFIG_DIR' : null,
-            defaultPortableDir: '/Applications/Claude Code Haha/CLAUDE_CONFIG_DIR',
-            activeConfigDir: mode === 'portable' ? portableDir ?? '/Applications/Claude Code Haha/CLAUDE_CONFIG_DIR' : null,
+            portableDir: mode === 'portable' ? portableDir ?? '/Applications/CC-Tools/CLAUDE_CONFIG_DIR' : null,
+            defaultPortableDir: '/Applications/CC-Tools/CLAUDE_CONFIG_DIR',
+            activeConfigDir: mode === 'portable' ? portableDir ?? '/Applications/CC-Tools/CLAUDE_CONFIG_DIR' : null,
             configDirSource: mode === 'portable' ? 'portable' : 'system',
           },
           appModeRequiresRestart: true,
@@ -415,7 +415,7 @@ describe('Settings > General tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Choose Folder' }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Portable data directory')).toHaveValue('/Users/test/cc-haha-data')
+      expect(screen.getByLabelText('Portable data directory')).toHaveValue('/Users/test/cc-tools-data')
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Use This Folder and Restart' }))
@@ -423,7 +423,7 @@ describe('Settings > General tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save and Restart' }))
 
     await waitFor(() => {
-      expect(useSettingsStore.getState().setAppMode).toHaveBeenCalledWith('portable', '/Users/test/cc-haha-data')
+      expect(useSettingsStore.getState().setAppMode).toHaveBeenCalledWith('portable', '/Users/test/cc-tools-data')
       expect(tauriCoreMock.invoke).toHaveBeenCalledWith('prepare_for_app_mode_restart')
       expect(tauriProcessMock.relaunch).toHaveBeenCalledTimes(1)
     })
@@ -435,9 +435,9 @@ describe('Settings > General tab', () => {
     useSettingsStore.setState({
       appMode: {
         mode: 'portable',
-        portableDir: '/Users/test/cc-haha-data',
-        defaultPortableDir: '/Applications/Claude Code Haha/CLAUDE_CONFIG_DIR',
-        activeConfigDir: '/Users/test/cc-haha-data',
+        portableDir: '/Users/test/cc-tools-data',
+        defaultPortableDir: '/Applications/CC-Tools/CLAUDE_CONFIG_DIR',
+        activeConfigDir: '/Users/test/cc-tools-data',
         configDirSource: 'portable',
       },
     })
@@ -471,7 +471,7 @@ describe('Settings > General tab', () => {
     expect(screen.getByText('Choose or enter a portable data directory first.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Use the default portable folder beside the app' }))
-    expect(input).toHaveValue('/Applications/Claude Code Haha/CLAUDE_CONFIG_DIR')
+    expect(input).toHaveValue('/Applications/CC-Tools/CLAUDE_CONFIG_DIR')
     expect(screen.queryByText('Choose or enter a portable data directory first.')).not.toBeInTheDocument()
   })
 
@@ -495,7 +495,7 @@ describe('Settings > General tab', () => {
       appMode: {
         mode: 'portable',
         portableDir: '/env/claude-data',
-        defaultPortableDir: '/Applications/Claude Code Haha/CLAUDE_CONFIG_DIR',
+        defaultPortableDir: '/Applications/CC-Tools/CLAUDE_CONFIG_DIR',
         activeConfigDir: '/env/claude-data',
         configDirSource: 'environment',
       },

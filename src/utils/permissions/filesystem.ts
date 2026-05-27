@@ -81,7 +81,7 @@ export const DANGEROUS_DIRECTORIES = [
 /**
  * Normalizes a path for case-insensitive comparison.
  * This prevents bypassing security checks using mixed-case paths on case-insensitive
- * filesystems (macOS/Windows) like `.cLauDe/Settings.locaL.json`.
+ * filesystems (macOS/Windows) like `.cc-tools/Settings.locaL.json`.
  *
  * We always normalize to lowercase regardless of platform for consistent security.
  * @param path The path to normalize
@@ -203,7 +203,7 @@ export function isClaudeSettingsPath(filePath: string): boolean {
   const expandedPath = expandPath(filePath)
 
   // Normalize for case-insensitive comparison to prevent bypassing security
-  // with paths like .cLauDe/Settings.locaL.json
+  // with paths like .cc-tools/Settings.locaL.json
   const normalizedPath = normalizeCaseForComparison(expandedPath)
 
   // Use platform separator so endsWith checks work on both Unix (/) and Windows (\)
@@ -721,7 +721,7 @@ export function pathInWorkingPath(path: string, workingPath: string): boolean {
     .replace(/^\/private\/tmp(\/|$)/, '/tmp$1')
 
   // Normalize case for case-insensitive comparison to prevent bypassing security
-  // checks on case-insensitive filesystems (macOS/Windows) like .cLauDe/CoMmAnDs
+  // checks on case-insensitive filesystems (macOS/Windows) like .cc-tools/CoMmAnDs
   const caseNormalizedPath = normalizeCaseForComparison(normalizedPath)
   const caseNormalizedWorkingPath = normalizeCaseForComparison(
     normalizedWorkingPath,
