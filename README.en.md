@@ -12,7 +12,7 @@
 
 </div>
 
-CC-Tools is a **Desktop + CLI + Web workspace** for Claude Code. This project is based on and modified from [NanmiCoder/cc-haha](https://github.com/NanmiCoder/cc-haha).
+CC-Tools is a **Desktop + CLI + Web workspace** for Claude Code. This project is based on and modified from [wenlong66/cc-tools](https://github.com/wenlong66/cc-tools).
 
 <p align="center">
   <a href="#desktop-preview">Desktop Preview</a> ·

@@ -12,7 +12,7 @@
 
 </div>
 
-CC-Tools 是一个面向 Claude Code 的 **桌面端 + CLI + Web 工作台**。项目基于 [NanmiCoder/cc-haha](https://github.com/NanmiCoder/cc-haha) 修改
+CC-Tools 是一个面向 Claude Code 的 **桌面端 + CLI + Web 工作台**。项目基于 [wenlong66/cc-tools](https://github.com/wenlong66/cc-tools) 修改
 
 <p align="center">
   <a href="#桌面端预览">桌面端预览</a> ·
