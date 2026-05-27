@@ -1,83 +1,97 @@
 // desktop/src/stores/hahaOAuthStore.ts
 
 import { create } from 'zustand'
-import {
-  hahaOAuthApi,
-  OAUTH_DISABLED_MESSAGE,
-  type HahaOAuthStatus,
-} from '../api/hahaOAuth'
+import { cctoolsOAuthApi, type CCToolsOAuthStatus } from '../api/cctoolsOAuth'
 
-type HahaOAuthState = {
-  status: HahaOAuthStatus | null
+const POLL_INTERVAL_MS = 2_000
+
+type CCToolsOAuthState = {
+  status: CCToolsOAuthStatus | null
   isPolling: boolean
   isLoading: boolean
   error: string | null
 
   fetchStatus: () => Promise<void>
-  login: () => Promise<never>
+  login: () => Promise<{ authorizeUrl: string }>
   logout: () => Promise<void>
   startPolling: () => void
   stopPolling: () => void
 }
 
-const disabledStatus: HahaOAuthStatus = {
-  loggedIn: false,
-  disabled: true,
-  message: OAUTH_DISABLED_MESSAGE,
-}
+export const useCCToolsOAuthStore = create<CCToolsOAuthState>((set, get) => {
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
 
-export const useHahaOAuthStore = create<HahaOAuthState>(set => ({
-  status: disabledStatus,
-  isPolling: false,
-  isLoading: false,
-  error: null,
+  return {
+    status: null,
+    isPolling: false,
+    isLoading: false,
+    error: null,
 
-  fetchStatus: async () => {
-    try {
-      const status = await hahaOAuthApi.status()
-      set({ status, error: null })
-    } catch (err) {
-      set({
-        status: disabledStatus,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  },
+    fetchStatus: async () => {
+      try {
+        const status = await cctoolsOAuthApi.status()
+        set({ status, error: null })
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : String(err) })
+      }
+    },
 
-  login: async () => {
-    set({ isLoading: true, error: null })
-    const error = new Error(OAUTH_DISABLED_MESSAGE)
-    set({
-      isLoading: false,
-      status: disabledStatus,
-      error: error.message,
-    })
-    throw error
-  },
+    login: async () => {
+      set({ isLoading: true, error: null })
+      try {
+        const res = await cctoolsOAuthApi.start()
+        set({ isLoading: false })
+        return { authorizeUrl: res.authorizeUrl }
+      } catch (err) {
+        set({
+          isLoading: false,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        throw err
+      }
+    },
 
-  logout: async () => {
-    set({ isLoading: true, error: null })
-    try {
-      await hahaOAuthApi.logout()
-      set({
-        status: disabledStatus,
-        isLoading: false,
-      })
-    } catch (err) {
-      set({
-        status: disabledStatus,
-        isLoading: false,
-        error: err instanceof Error ? err.message : String(err),
-      })
-      throw err
-    }
-  },
+    logout: async () => {
+      get().stopPolling()
+      set({ isLoading: true })
+      try {
+        await cctoolsOAuthApi.logout()
+        set({ status: { loggedIn: false }, isLoading: false })
+      } catch (err) {
+        set({
+          isLoading: false,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        throw err
+      }
+    },
 
-  startPolling: () => {
-    set({ isPolling: false })
-  },
+    startPolling: () => {
+      if (pollTimer) return
+      set({ isPolling: true })
 
-  stopPolling: () => {
-    set({ isPolling: false })
-  },
-}))
+      const scheduleNext = () => {
+        pollTimer = setTimeout(async () => {
+          await get().fetchStatus()
+          const cur = get().status
+          if (cur && cur.loggedIn) {
+            get().stopPolling()
+            return
+          }
+          if (get().isPolling) {
+            scheduleNext()
+          }
+        }, POLL_INTERVAL_MS)
+      }
+      scheduleNext()
+    },
+
+    stopPolling: () => {
+      if (pollTimer) {
+        clearTimeout(pollTimer)
+        pollTimer = null
+      }
+      set({ isPolling: false })
+    },
+  }
+})

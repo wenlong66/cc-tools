@@ -6,7 +6,7 @@ import { OPENAI_CODEX_API_ENDPOINT } from '../../services/openaiAuth/client.js'
 import { ProviderService } from '../services/providerService.js'
 import { deriveTitle, generateTitle, parseGeneratedTitleText, saveAiTitle } from '../services/titleService.js'
 import { sessionService } from '../services/sessionService.js'
-import { hahaOpenAIOAuthService } from '../services/hahaOpenAIOAuthService.js'
+import { cctoolsOpenAIOAuthService } from '../services/cctoolsOpenAIOAuthService.js'
 
 describe('titleService', () => {
   let tmpDir: string
@@ -22,7 +22,7 @@ describe('titleService', () => {
 
   afterEach(async () => {
     globalThis.fetch = originalFetch
-    hahaOpenAIOAuthService.dispose()
+    cctoolsOpenAIOAuthService.dispose()
     restoreEnv('CLAUDE_CONFIG_DIR', originalConfigDir)
     await fs.rm(tmpDir, { recursive: true, force: true })
   })
@@ -42,13 +42,13 @@ describe('titleService', () => {
 
     try {
       const providerId = 'zhipu-test'
-      await fs.mkdir(path.join(tmpDir, 'cc-haha'), { recursive: true })
+      await fs.mkdir(path.join(tmpDir, 'cc-tools'), { recursive: true })
       await fs.writeFile(
         path.join(tmpDir, 'settings.json'),
         JSON.stringify({ alwaysThinkingEnabled: false }, null, 2),
       )
       await fs.writeFile(
-        path.join(tmpDir, 'cc-haha', 'providers.json'),
+        path.join(tmpDir, 'cc-tools', 'providers.json'),
         JSON.stringify({
           activeId: providerId,
           providers: [
@@ -195,7 +195,7 @@ describe('titleService', () => {
   test('generates titles when ChatGPT Official OAuth is active', async () => {
     const providerService = new ProviderService()
     await providerService.activateProvider('openai-official')
-    await hahaOpenAIOAuthService.saveTokens({
+    await cctoolsOpenAIOAuthService.saveTokens({
       accessToken: 'access-for-title',
       refreshToken: 'refresh-for-title',
       expiresAt: Date.now() + 60 * 60_000,

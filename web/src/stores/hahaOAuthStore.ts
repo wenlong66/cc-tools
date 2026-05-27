@@ -2,13 +2,13 @@
 
 import { create } from 'zustand'
 import {
-  hahaOAuthApi,
+  cctoolsOAuthApi,
   OAUTH_DISABLED_MESSAGE,
-  type HahaOAuthStatus,
+  type CCToolsOAuthStatus,
 } from '../api/hahaOAuth'
 
-type HahaOAuthState = {
-  status: HahaOAuthStatus | null
+type CCToolsOAuthState = {
+  status: CCToolsOAuthStatus | null
   isPolling: boolean
   isLoading: boolean
   error: string | null
@@ -20,13 +20,13 @@ type HahaOAuthState = {
   stopPolling: () => void
 }
 
-const disabledStatus: HahaOAuthStatus = {
+const disabledStatus: CCToolsOAuthStatus = {
   loggedIn: false,
   disabled: true,
   message: OAUTH_DISABLED_MESSAGE,
 }
 
-export const useHahaOAuthStore = create<HahaOAuthState>(set => ({
+export const useCCToolsOAuthStore = create<CCToolsOAuthState>(set => ({
   status: disabledStatus,
   isPolling: false,
   isLoading: false,
@@ -34,7 +34,7 @@ export const useHahaOAuthStore = create<HahaOAuthState>(set => ({
 
   fetchStatus: async () => {
     try {
-      const status = await hahaOAuthApi.status()
+      const status = await cctoolsOAuthApi.status()
       set({ status, error: null })
     } catch (err) {
       set({
@@ -58,7 +58,7 @@ export const useHahaOAuthStore = create<HahaOAuthState>(set => ({
   logout: async () => {
     set({ isLoading: true, error: null })
     try {
-      await hahaOAuthApi.logout()
+      await cctoolsOAuthApi.logout()
       set({
         status: disabledStatus,
         isLoading: false,

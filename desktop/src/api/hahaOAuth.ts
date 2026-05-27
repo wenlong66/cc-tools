@@ -1,28 +1,38 @@
 // desktop/src/api/hahaOAuth.ts
 
-import { api } from './client'
+import { api, getBaseUrl } from './client'
 
-export const OAUTH_DISABLED_MESSAGE =
-  'OAuth login is disabled in CC-Tools; configure an API provider instead.'
+export type CCToolsOAuthStatus =
+  | { loggedIn: false }
+  | {
+      loggedIn: true
+      expiresAt: number | null
+      scopes: string[]
+      subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null
+    }
 
-export type HahaOAuthStatus = {
-  loggedIn: false
-  disabled: true
-  message: string
+function currentServerPort(): number {
+  const port = new URL(getBaseUrl()).port
+  const parsed = Number.parseInt(port, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Cannot determine server port from baseUrl: ${getBaseUrl()}`)
+  }
+  return parsed
 }
 
-export const hahaOAuthApi = {
+export const cctoolsOAuthApi = {
   start() {
-    return api.post<{ disabled: true; message: string }>('/api/haha-oauth/start', {})
+    return api.post<{ authorizeUrl: string; state: string }>(
+      '/api/cctools-oauth/start',
+      { serverPort: currentServerPort() },
+    )
   },
 
   status() {
-    return api.get<HahaOAuthStatus>('/api/haha-oauth')
+    return api.get<CCToolsOAuthStatus>('/api/cctools-oauth')
   },
 
   logout() {
-    return api.delete<{ ok: true; disabled: true; message: string }>(
-      '/api/haha-oauth',
-    )
+    return api.delete<{ ok: true }>('/api/cctools-oauth')
   },
 }

@@ -1,5 +1,5 @@
 /**
- * Unit tests for HahaOAuthService — haha 自管 OAuth 的核心 service 层。
+ * Unit tests for CCToolsOAuthService — cctools 自管 OAuth 的核心 service 层。
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
@@ -7,19 +7,19 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
 import {
-  HahaOAuthService,
+  CCToolsOAuthService,
   type StoredOAuthTokens,
-} from '../services/hahaOAuthService.js'
+} from '../services/cctoolsOAuthService.js'
 
 let tmpDir: string
 let originalConfigDir: string | undefined
-let service: HahaOAuthService
+let service: CCToolsOAuthService
 
 async function setup() {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'haha-oauth-test-'))
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cctools-oauth-test-'))
   originalConfigDir = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = tmpDir
-  service = new HahaOAuthService()
+  service = new CCToolsOAuthService()
 }
 
 async function teardown() {
@@ -31,7 +31,7 @@ async function teardown() {
   await fs.rm(tmpDir, { recursive: true, force: true })
 }
 
-describe('HahaOAuthService — file storage', () => {
+describe('CCToolsOAuthService — file storage', () => {
   beforeEach(setup)
   afterEach(teardown)
 
@@ -72,7 +72,7 @@ describe('HahaOAuthService — file storage', () => {
   })
 })
 
-describe('HahaOAuthService — session management', () => {
+describe('CCToolsOAuthService — session management', () => {
   beforeEach(setup)
   afterEach(teardown)
 
@@ -123,7 +123,7 @@ describe('HahaOAuthService — session management', () => {
   })
 })
 
-describe('HahaOAuthService — ensureFreshAccessToken', () => {
+describe('CCToolsOAuthService — ensureFreshAccessToken', () => {
   beforeEach(setup)
   afterEach(teardown)
 

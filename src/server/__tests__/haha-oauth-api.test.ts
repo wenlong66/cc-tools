@@ -1,19 +1,19 @@
 /**
- * Integration tests for /api/haha-oauth/* endpoints.
+ * Integration tests for /api/cctools-oauth/* endpoints.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
-import { handleHahaOAuthApi } from '../api/haha-oauth.js'
-import { hahaOAuthService } from '../services/hahaOAuthService.js'
+import { handleCCToolsOAuthApi } from '../api/cctools-oauth.js'
+import { cctoolsOAuthService } from '../services/cctoolsOAuthService.js'
 
 let tmpDir: string
 let originalConfigDir: string | undefined
 
 async function setup() {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'haha-oauth-api-test-'))
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cctools-oauth-api-test-'))
   originalConfigDir = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = tmpDir
 }
@@ -42,52 +42,47 @@ function buildReq(
   return { req, url, segments }
 }
 
-describe('POST /api/haha-oauth/start', () => {
+describe('POST /api/cctools-oauth/start', () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test('returns 410 when OAuth login is disabled', async () => {
-    const { req, url, segments } = buildReq('POST', '/api/haha-oauth/start', {
+  test('returns authorize URL with PKCE challenge', async () => {
+    const { req, url, segments } = buildReq('POST', '/api/cctools-oauth/start', {
       serverPort: 54321,
     })
-    const res = await handleHahaOAuthApi(req, url, segments)
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+    const res = await handleCCToolsOAuthApi(req, url, segments)
+    expect(res.status).toBe(200)
+    const data = (await res.json()) as { authorizeUrl: string; state: string }
+    expect(data.authorizeUrl).toContain('code_challenge_method=S256')
+    expect(data.authorizeUrl).toContain(
+      encodeURIComponent('http://localhost:54321/callback'),
+    )
+    expect(data.state).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 
-  test('returns 410 even when serverPort is missing', async () => {
-    const { req, url, segments } = buildReq('POST', '/api/haha-oauth/start', {})
-    const res = await handleHahaOAuthApi(req, url, segments)
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+  test('400 if serverPort missing', async () => {
+    const { req, url, segments } = buildReq('POST', '/api/cctools-oauth/start', {})
+    const res = await handleCCToolsOAuthApi(req, url, segments)
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string; message?: string }
+    expect(body.error).toBe('BAD_REQUEST')
   })
 })
 
-describe('GET /api/haha-oauth/status', () => {
+describe('GET /api/cctools-oauth/status', () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test('returns disabled status when no token file exists', async () => {
-    const { req, url, segments } = buildReq('GET', '/api/haha-oauth/status')
-    const res = await handleHahaOAuthApi(req, url, segments)
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+  test('returns loggedIn=false when no token file', async () => {
+    const { req, url, segments } = buildReq('GET', '/api/cctools-oauth/status')
+    const res = await handleCCToolsOAuthApi(req, url, segments)
+    expect(res.status).toBe(200)
+    const data = (await res.json()) as { loggedIn: boolean }
+    expect(data.loggedIn).toBe(false)
   })
 
-  test('returns disabled status even when tokens were previously saved', async () => {
-    await hahaOAuthService.saveTokens({
+  test('returns loggedIn=true + metadata when token saved', async () => {
+    await cctoolsOAuthService.saveTokens({
       accessToken: 'sk-ant-oat01-xxx',
       refreshToken: 'sk-ant-ort01-xxx',
       expiresAt: Date.now() + 3600_000,
@@ -95,46 +90,47 @@ describe('GET /api/haha-oauth/status', () => {
       subscriptionType: 'max',
     })
 
-    const { req, url, segments } = buildReq('GET', '/api/haha-oauth/status')
-    const res = await handleHahaOAuthApi(req, url, segments)
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+    const { req, url, segments } = buildReq('GET', '/api/cctools-oauth/status')
+    const res = await handleCCToolsOAuthApi(req, url, segments)
+    expect(res.status).toBe(200)
+    const data = (await res.json()) as {
+      loggedIn: boolean
+      subscriptionType: string | null
+      scopes: string[]
+    }
+    expect(data.loggedIn).toBe(true)
+    expect(data.subscriptionType).toBe('max')
+    expect(data.scopes).toEqual(['user:inference'])
+    expect(JSON.stringify(data)).not.toContain('sk-ant-oat01')
+    expect(JSON.stringify(data)).not.toContain('sk-ant-ort01')
   })
 
-  test('returns disabled status even when a stored token is expired', async () => {
-    await hahaOAuthService.saveTokens({
+  test('returns loggedIn=false when stored token is expired and refresh fails', async () => {
+    await cctoolsOAuthService.saveTokens({
       accessToken: 'expired-token',
       refreshToken: 'revoked-refresh-token',
       expiresAt: Date.now() - 1_000,
       scopes: ['user:inference'],
       subscriptionType: 'max',
     })
-    hahaOAuthService.setRefreshFn(async () => {
+    cctoolsOAuthService.setRefreshFn(async () => {
       throw new Error('refresh revoked')
     })
 
-    const { req, url, segments } = buildReq('GET', '/api/haha-oauth/status')
-    const res = await handleHahaOAuthApi(req, url, segments)
+    const { req, url, segments } = buildReq('GET', '/api/cctools-oauth/status')
+    const res = await handleCCToolsOAuthApi(req, url, segments)
 
-    expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({
-      loggedIn: false,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ loggedIn: false })
   })
 })
 
-describe('DELETE /api/haha-oauth', () => {
+describe('DELETE /api/cctools-oauth', () => {
   beforeEach(setup)
   afterEach(teardown)
 
-  test('returns disabled response without deleting stored tokens', async () => {
-    await hahaOAuthService.saveTokens({
+  test('clears token file', async () => {
+    await cctoolsOAuthService.saveTokens({
       accessToken: 'a',
       refreshToken: null,
       expiresAt: null,
@@ -142,20 +138,9 @@ describe('DELETE /api/haha-oauth', () => {
       subscriptionType: null,
     })
 
-    const { req, url, segments } = buildReq('DELETE', '/api/haha-oauth')
-    const res = await handleHahaOAuthApi(req, url, segments)
+    const { req, url, segments } = buildReq('DELETE', '/api/cctools-oauth')
+    const res = await handleCCToolsOAuthApi(req, url, segments)
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      ok: true,
-      disabled: true,
-      message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    })
-    expect(await hahaOAuthService.loadTokens()).toEqual({
-      accessToken: 'a',
-      refreshToken: null,
-      expiresAt: null,
-      scopes: [],
-      subscriptionType: null,
-    })
+    expect(await cctoolsOAuthService.loadTokens()).toBeNull()
   })
 })

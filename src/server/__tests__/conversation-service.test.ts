@@ -40,7 +40,7 @@ describe('ConversationService', () => {
     originalPath = process.env.PATH
     originalShell = process.env.SHELL
     originalZdotdir = process.env.ZDOTDIR
-    originalDisableTerminalShellEnv = process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
+    originalDisableTerminalShellEnv = process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
 
     process.env.CLAUDE_CONFIG_DIR = tmpDir
     process.env.ANTHROPIC_API_KEY = 'stale-parent-api-key'
@@ -54,7 +54,7 @@ describe('ConversationService', () => {
     delete process.env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST
     delete process.env.CLAUDE_CODE_DIAGNOSTICS_FILE
     delete process.env.CLAUDE_CODE_ATTRIBUTION_HEADER
-    process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV = '1'
+    process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV = '1'
     resetTerminalShellEnvironmentCacheForTests()
   })
 
@@ -101,8 +101,8 @@ describe('ConversationService', () => {
     if (originalZdotdir === undefined) delete process.env.ZDOTDIR
     else process.env.ZDOTDIR = originalZdotdir
 
-    if (originalDisableTerminalShellEnv === undefined) delete process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
-    else process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV = originalDisableTerminalShellEnv
+    if (originalDisableTerminalShellEnv === undefined) delete process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
+    else process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV = originalDisableTerminalShellEnv
 
     resetTerminalShellEnvironmentCacheForTests()
     await fs.rm(tmpDir, { recursive: true, force: true })
@@ -149,7 +149,7 @@ describe('ConversationService', () => {
 
   test('buildChildEnv pins desktop memory to the current sanitized project directory', async () => {
     const service = new ConversationService() as any
-    const workDir = path.join(tmpDir, 'workspace', 'myself_code', 'claude-code-haha')
+    const workDir = path.join(tmpDir, 'workspace', 'myself_code', 'cc-tools')
     await fs.mkdir(workDir, { recursive: true })
 
     const env = (await service.buildChildEnv(workDir)) as Record<string, string>
@@ -162,8 +162,6 @@ describe('ConversationService', () => {
   })
 
   test('buildChildEnv inherits exported terminal shell variables for desktop CLI sessions', async () => {
-    if (process.platform === 'win32') return
-
     const shellPath = path.join(tmpDir, 'zsh')
     const nodeBin = path.join(tmpDir, 'node-bin')
     const nvmDir = path.join(tmpDir, '.nvm')
@@ -179,7 +177,7 @@ describe('ConversationService', () => {
       ].join('\n'),
     )
 
-    delete process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
+    delete process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
     process.env.HOME = tmpDir
     process.env.SHELL = shellPath
     process.env.PATH = '/usr/bin:/bin'
@@ -195,10 +193,10 @@ describe('ConversationService', () => {
   })
 
   test('strips inherited provider env when desktop provider config exists', async () => {
-    const ccHahaDir = path.join(tmpDir, 'cc-tools')
-    await fs.mkdir(ccHahaDir, { recursive: true })
+    const ccToolsDir = path.join(tmpDir, 'cc-tools')
+    await fs.mkdir(ccToolsDir, { recursive: true })
     await fs.writeFile(
-      path.join(ccHahaDir, 'providers.json'),
+      path.join(ccToolsDir, 'providers.json'),
       JSON.stringify({ activeId: null, providers: [] }),
       'utf-8',
     )
@@ -234,19 +232,19 @@ describe('ConversationService', () => {
     expect(env.HTTPS_PROXY).toBe('http://127.0.0.1:7890')
   })
 
-  test('buildChildEnv injects CLAUDE_CODE_OAUTH_TOKEN when official mode + haha oauth token exists', async () => {
-    const ccHahaDir = path.join(tmpDir, 'cc-tools')
-    await fs.mkdir(ccHahaDir, { recursive: true })
+  test('buildChildEnv injects CLAUDE_CODE_OAUTH_TOKEN when official mode + cctools oauth token exists', async () => {
+    const ccToolsDir = path.join(tmpDir, 'cc-tools')
+    await fs.mkdir(ccToolsDir, { recursive: true })
     await fs.writeFile(
-      path.join(ccHahaDir, 'settings.json'),
+      path.join(ccToolsDir, 'settings.json'),
       JSON.stringify({ env: {} }),
       'utf-8',
     )
 
-    const { hahaOAuthService } = await import('../services/hahaOAuthService.js')
-    await hahaOAuthService.saveTokens({
-      accessToken: 'haha-fresh-token',
-      refreshToken: 'haha-refresh-xxx',
+    const { cctoolsOAuthService } = await import('../services/cctoolsOAuthService.js')
+    await cctoolsOAuthService.saveTokens({
+      accessToken: 'cctools-fresh-token',
+      refreshToken: 'cctools-refresh-xxx',
       expiresAt: Date.now() + 30 * 60_000,
       scopes: ['user:inference'],
       subscriptionType: 'max',
@@ -256,21 +254,21 @@ describe('ConversationService', () => {
     const env = (await service.buildChildEnv('/tmp')) as Record<string, string>
 
     expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('claude-desktop')
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('haha-fresh-token')
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('cctools-fresh-token')
   })
 
   test('buildChildEnv does NOT inject CLAUDE_CODE_OAUTH_TOKEN when not official mode', async () => {
-    const ccHahaDir = path.join(tmpDir, 'cc-tools')
-    await fs.mkdir(ccHahaDir, { recursive: true })
+    const ccToolsDir = path.join(tmpDir, 'cc-tools')
+    await fs.mkdir(ccToolsDir, { recursive: true })
     await fs.writeFile(
-      path.join(ccHahaDir, 'settings.json'),
+      path.join(ccToolsDir, 'settings.json'),
       JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'custom-provider-token' } }),
       'utf-8',
     )
 
-    const { hahaOAuthService } = await import('../services/hahaOAuthService.js')
-    await hahaOAuthService.saveTokens({
-      accessToken: 'haha-token-should-not-be-used',
+    const { cctoolsOAuthService } = await import('../services/cctoolsOAuthService.js')
+    await cctoolsOAuthService.saveTokens({
+      accessToken: 'cctools-token-should-not-be-used',
       refreshToken: null,
       expiresAt: null,
       scopes: [],
@@ -412,16 +410,16 @@ describe('ConversationService', () => {
   })
 
   test('buildChildEnv can force official auth even when a custom default provider exists', async () => {
-    const ccHahaDir = path.join(tmpDir, 'cc-tools')
-    await fs.mkdir(ccHahaDir, { recursive: true })
+    const ccToolsDir = path.join(tmpDir, 'cc-tools')
+    await fs.mkdir(ccToolsDir, { recursive: true })
     await fs.writeFile(
-      path.join(ccHahaDir, 'settings.json'),
+      path.join(ccToolsDir, 'settings.json'),
       JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'custom-provider-token' } }),
       'utf-8',
     )
 
-    const { hahaOAuthService } = await import('../services/hahaOAuthService.js')
-    await hahaOAuthService.saveTokens({
+    const { cctoolsOAuthService } = await import('../services/cctoolsOAuthService.js')
+    await cctoolsOAuthService.saveTokens({
       accessToken: 'forced-official-token',
       refreshToken: 'forced-official-refresh',
       expiresAt: Date.now() + 30 * 60_000,
@@ -443,8 +441,8 @@ describe('ConversationService', () => {
     const providerService = new ProviderService()
     await providerService.activateProvider('openai-official')
 
-    const { hahaOAuthService } = await import('../services/hahaOAuthService.js')
-    await hahaOAuthService.saveTokens({
+    const { cctoolsOAuthService } = await import('../services/cctoolsOAuthService.js')
+    await cctoolsOAuthService.saveTokens({
       accessToken: 'claude-oauth-token-that-must-not-be-used',
       refreshToken: 'claude-refresh-token',
       expiresAt: Date.now() + 30 * 60_000,
@@ -468,7 +466,7 @@ describe('ConversationService', () => {
       providerId: 'openai-official',
     })) as Record<string, string>
 
-    expect(env.CC_HAHA_OPENAI_OAUTH_PROVIDER).toBe('1')
+    expect(env.CC_TOOLS_OPENAI_OAUTH_PROVIDER).toBe('1')
     expect(env.OPENAI_CODEX_OAUTH_FILE).toBe(
       path.join(tmpDir, 'cc-tools', 'openai-oauth.json'),
     )
@@ -483,10 +481,10 @@ describe('ConversationService', () => {
   })
 
   test('buildChildEnv does not leak inherited CLAUDE_CODE_OAUTH_TOKEN when official token is unavailable', async () => {
-    const ccHahaDir = path.join(tmpDir, 'cc-tools')
-    await fs.mkdir(ccHahaDir, { recursive: true })
+    const ccToolsDir = path.join(tmpDir, 'cc-tools')
+    await fs.mkdir(ccToolsDir, { recursive: true })
     await fs.writeFile(
-      path.join(ccHahaDir, 'settings.json'),
+      path.join(ccToolsDir, 'settings.json'),
       JSON.stringify({ env: {} }),
       'utf-8',
     )

@@ -696,13 +696,13 @@ export class CronScheduler {
       return true
     }
 
-    const ccHahaDir = path.join(this.getConfigDir(), 'cc-tools')
-    if (existsSync(path.join(ccHahaDir, 'providers.json'))) {
+    const ccToolsDir = path.join(this.getConfigDir(), 'cc-tools')
+    if (existsSync(path.join(ccToolsDir, 'providers.json'))) {
       return true
     }
 
     try {
-      const raw = readFileSync(path.join(ccHahaDir, 'settings.json'), 'utf-8')
+      const raw = readFileSync(path.join(ccToolsDir, 'settings.json'), 'utf-8')
       const parsed = JSON.parse(raw) as { env?: Record<string, string> }
       const env = parsed.env ?? {}
       return Object.entries(env).some(
@@ -750,8 +750,8 @@ export class CronScheduler {
       CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
     }
     try {
-      const { hahaOAuthService } = await import('./hahaOAuthService.js')
-      const token = await hahaOAuthService.ensureFreshAccessToken()
+      const { cctoolsOAuthService } = await import('./cctoolsOAuthService.js')
+      const token = await cctoolsOAuthService.ensureFreshAccessToken()
       if (token) {
         env.CLAUDE_CODE_OAUTH_TOKEN = token
       }

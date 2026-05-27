@@ -237,7 +237,7 @@ describe('Real Provider Configs', () => {
       presetId: 'minimax',
       name: 'MiniMax',
       baseUrl: 'https://api.minimaxi.com/anthropic',
-      apiKey: 'sk-cc-tools-key',
+      apiKey: 'sk-cctools-key',
       models: MODEL_MAPPING,
     })
     await service.activateProvider(provider.id)
@@ -249,10 +249,10 @@ describe('Real Provider Configs', () => {
     expect(original.effortLevel).toBe('high')
 
     // 验证 cc-tools/settings.json 是 CC-Tools 自己的
-    const cc-tools = await readCcToolsSettings()
-    expect((cc-tools.env as Record<string, string>).ANTHROPIC_BASE_URL).toBe('https://api.minimaxi.com/anthropic')
-    expect((cc-tools.env as Record<string, string>).ANTHROPIC_AUTH_TOKEN).toBe('sk-cc-tools-key')
-    expect((cc-tools.env as Record<string, string>).ANTHROPIC_API_KEY).toBe('')
+    const cctools = await readCcToolsSettings()
+    expect((cctools.env as Record<string, string>).ANTHROPIC_BASE_URL).toBe('https://api.minimaxi.com/anthropic')
+    expect((cctools.env as Record<string, string>).ANTHROPIC_AUTH_TOKEN).toBe('sk-cctools-key')
+    expect((cctools.env as Record<string, string>).ANTHROPIC_API_KEY).toBe('')
 
     console.log('✅ 原版 settings.json 完好无损，CC-Tools 配置独立存储')
   })

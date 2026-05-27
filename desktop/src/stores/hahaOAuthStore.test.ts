@@ -1,64 +1,77 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { statusMock, logoutMock } = vi.hoisted(() => ({
+const { startMock, statusMock, logoutMock } = vi.hoisted(() => ({
+  startMock: vi.fn(),
   statusMock: vi.fn(),
   logoutMock: vi.fn(),
 }))
 
-vi.mock('../api/hahaOAuth', () => ({
-  OAUTH_DISABLED_MESSAGE:
-    'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-  hahaOAuthApi: {
+vi.mock('../api/cctoolsOAuth', () => ({
+  cctoolsOAuthApi: {
+    start: startMock,
     status: statusMock,
     logout: logoutMock,
   },
 }))
 
-import { useHahaOAuthStore } from './hahaOAuthStore'
+import { useCCToolsOAuthStore } from './cctoolsOAuthStore'
 
-const initialState = useHahaOAuthStore.getState()
+const initialState = useCCToolsOAuthStore.getState()
 
-describe('hahaOAuthStore', () => {
+describe('cctoolsOAuthStore', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    startMock.mockReset()
     statusMock.mockReset()
     logoutMock.mockReset()
-    useHahaOAuthStore.setState({
+    useCCToolsOAuthStore.setState({
       ...initialState,
+      status: null,
       isPolling: false,
       isLoading: false,
       error: null,
     })
   })
 
-  it('login fails with the API-only disabled message', async () => {
-    await expect(useHahaOAuthStore.getState().login()).rejects.toThrow(
-      'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    )
-
-    expect(useHahaOAuthStore.getState().isPolling).toBe(false)
-    expect(useHahaOAuthStore.getState().error).toBe(
-      'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-    )
-    expect(useHahaOAuthStore.getState().status).toMatchObject({
-      loggedIn: false,
-      disabled: true,
-    })
+  afterEach(() => {
+    useCCToolsOAuthStore.getState().stopPolling()
+    useCCToolsOAuthStore.setState(initialState)
+    vi.useRealTimers()
   })
 
-  it('fetchStatus preserves the disabled status from the API', async () => {
-    statusMock.mockResolvedValue({
-      loggedIn: false,
-      disabled: true,
-      message:
-        'OAuth login is disabled in CC-Tools; configure an API provider instead.',
+  it('login does not start polling until the browser launch succeeds', async () => {
+    startMock.mockResolvedValue({
+      authorizeUrl: 'http://localhost:3456/api/cctools-oauth/callback',
+      state: 'state-123',
     })
 
-    await useHahaOAuthStore.getState().fetchStatus()
+    const result = await useCCToolsOAuthStore.getState().login()
 
-    expect(useHahaOAuthStore.getState().status).toMatchObject({
-      loggedIn: false,
-      disabled: true,
+    expect(result.authorizeUrl).toContain('/api/cctools-oauth/callback')
+    expect(useCCToolsOAuthStore.getState().isPolling).toBe(false)
+  })
+
+  it('startPolling stops after the status becomes logged in', async () => {
+    statusMock
+      .mockResolvedValueOnce({ loggedIn: false })
+      .mockResolvedValueOnce({
+        loggedIn: true,
+        expiresAt: Date.now() + 60_000,
+        scopes: ['user:inference'],
+        subscriptionType: 'max',
+      })
+
+    useCCToolsOAuthStore.getState().startPolling()
+    expect(useCCToolsOAuthStore.getState().isPolling).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(useCCToolsOAuthStore.getState().isPolling).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(useCCToolsOAuthStore.getState().status).toMatchObject({
+      loggedIn: true,
+      subscriptionType: 'max',
     })
-    expect(useHahaOAuthStore.getState().isPolling).toBe(false)
+    expect(useCCToolsOAuthStore.getState().isPolling).toBe(false)
   })
 })

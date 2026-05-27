@@ -8,21 +8,21 @@ const { statusMock, logoutMock } = vi.hoisted(() => ({
 vi.mock('../api/hahaOAuth', () => ({
   OAUTH_DISABLED_MESSAGE:
     'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-  hahaOAuthApi: {
+  cctoolsOAuthApi: {
     status: statusMock,
     logout: logoutMock,
   },
 }))
 
-import { useHahaOAuthStore } from './hahaOAuthStore'
+import { useCCToolsOAuthStore } from './hahaOAuthStore'
 
-const initialState = useHahaOAuthStore.getState()
+const initialState = useCCToolsOAuthStore.getState()
 
-describe('hahaOAuthStore', () => {
+describe('cctoolsOAuthStore', () => {
   beforeEach(() => {
     statusMock.mockReset()
     logoutMock.mockReset()
-    useHahaOAuthStore.setState({
+    useCCToolsOAuthStore.setState({
       ...initialState,
       isPolling: false,
       isLoading: false,
@@ -31,15 +31,15 @@ describe('hahaOAuthStore', () => {
   })
 
   it('login fails with the API-only disabled message', async () => {
-    await expect(useHahaOAuthStore.getState().login()).rejects.toThrow(
+    await expect(useCCToolsOAuthStore.getState().login()).rejects.toThrow(
       'OAuth login is disabled in CC-Tools; configure an API provider instead.',
     )
 
-    expect(useHahaOAuthStore.getState().isPolling).toBe(false)
-    expect(useHahaOAuthStore.getState().error).toBe(
+    expect(useCCToolsOAuthStore.getState().isPolling).toBe(false)
+    expect(useCCToolsOAuthStore.getState().error).toBe(
       'OAuth login is disabled in CC-Tools; configure an API provider instead.',
     )
-    expect(useHahaOAuthStore.getState().status).toMatchObject({
+    expect(useCCToolsOAuthStore.getState().status).toMatchObject({
       loggedIn: false,
       disabled: true,
     })
@@ -53,12 +53,12 @@ describe('hahaOAuthStore', () => {
         'OAuth login is disabled in CC-Tools; configure an API provider instead.',
     })
 
-    await useHahaOAuthStore.getState().fetchStatus()
+    await useCCToolsOAuthStore.getState().fetchStatus()
 
-    expect(useHahaOAuthStore.getState().status).toMatchObject({
+    expect(useCCToolsOAuthStore.getState().status).toMatchObject({
       loggedIn: false,
       disabled: true,
     })
-    expect(useHahaOAuthStore.getState().isPolling).toBe(false)
+    expect(useCCToolsOAuthStore.getState().isPolling).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
 /**
- * Unit tests for HahaOpenAIOAuthService — haha 自管 OpenAI OAuth 的核心 service 层。
+ * Unit tests for CCToolsOpenAIOAuthService — cctools 自管 OpenAI OAuth 的核心 service 层。
  */
 
 import { describe, test, expect, beforeEach, afterEach, spyOn } from 'bun:test'
@@ -8,14 +8,14 @@ import * as path from 'path'
 import * as os from 'os'
 import { createConnection, createServer } from 'net'
 import {
-  HahaOpenAIOAuthService,
-  getHahaOpenAIOAuthFilePath,
+  CCToolsOpenAIOAuthService,
+  getCCToolsOpenAIOAuthFilePath,
   type StoredOpenAIOAuthTokens,
-} from '../services/hahaOpenAIOAuthService.js'
+} from '../services/cctoolsOpenAIOAuthService.js'
 
 let tmpDir: string
 let originalConfigDir: string | undefined
-let service: HahaOpenAIOAuthService
+let service: CCToolsOpenAIOAuthService
 let callbackPort: number
 
 async function getFreePort(): Promise<number> {
@@ -71,12 +71,12 @@ function mockJwt(payload: Record<string, unknown>): string {
 
 async function setup() {
   tmpDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'haha-openai-oauth-test-'),
+    path.join(os.tmpdir(), 'cctools-openai-oauth-test-'),
   )
   originalConfigDir = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = tmpDir
   callbackPort = await getFreePort()
-  service = new HahaOpenAIOAuthService({ callbackPort })
+  service = new CCToolsOpenAIOAuthService({ callbackPort })
 }
 
 async function teardown() {
@@ -89,7 +89,7 @@ async function teardown() {
   await fs.rm(tmpDir, { recursive: true, force: true })
 }
 
-describe('HahaOpenAIOAuthService — file storage', () => {
+describe('CCToolsOpenAIOAuthService — file storage', () => {
   beforeEach(setup)
   afterEach(teardown)
 
@@ -109,7 +109,7 @@ describe('HahaOpenAIOAuthService — file storage', () => {
     }
     await service.saveTokens(tokens)
 
-    const oauthPath = getHahaOpenAIOAuthFilePath()
+    const oauthPath = getCCToolsOpenAIOAuthFilePath()
     const stat = await fs.stat(oauthPath)
     if (process.platform !== 'win32') {
       expect(stat.mode & 0o777).toBe(0o600)
@@ -153,7 +153,7 @@ describe('HahaOpenAIOAuthService — file storage', () => {
       renameSpy.mockRestore()
     }
 
-    const oauthPath = getHahaOpenAIOAuthFilePath()
+    const oauthPath = getCCToolsOpenAIOAuthFilePath()
     const files = await fs.readdir(path.dirname(oauthPath))
     expect(
       files.filter((name) => name.startsWith('openai-oauth.json.tmp.')),
@@ -162,7 +162,7 @@ describe('HahaOpenAIOAuthService — file storage', () => {
   })
 })
 
-describe('HahaOpenAIOAuthService — session management', () => {
+describe('CCToolsOpenAIOAuthService — session management', () => {
   beforeEach(setup)
   afterEach(teardown)
 
@@ -289,7 +289,7 @@ describe('HahaOpenAIOAuthService — session management', () => {
   })
 })
 
-describe('HahaOpenAIOAuthService — ensureFreshAccessToken', () => {
+describe('CCToolsOpenAIOAuthService — ensureFreshAccessToken', () => {
   beforeEach(setup)
   afterEach(teardown)
 

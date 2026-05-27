@@ -2,7 +2,7 @@
 
 import { api, getBaseUrl } from './client'
 
-export type HahaOpenAIOAuthStatus =
+export type CCToolsOpenAIOAuthStatus =
   | { loggedIn: false }
   | {
       loggedIn: true
@@ -20,19 +20,19 @@ function currentServerPort(): number {
   return parsed
 }
 
-export const hahaOpenAIOAuthApi = {
+export const cctoolsOpenAIOAuthApi = {
   start() {
     return api.post<{ authorizeUrl: string; state: string }>(
-      '/api/haha-openai-oauth/start',
+      '/api/cctools-openai-oauth/start',
       { serverPort: currentServerPort() },
     )
   },
 
   status() {
-    return api.get<HahaOpenAIOAuthStatus>('/api/haha-openai-oauth')
+    return api.get<CCToolsOpenAIOAuthStatus>('/api/cctools-openai-oauth')
   },
 
   logout() {
-    return api.delete<{ ok: true }>('/api/haha-openai-oauth')
+    return api.delete<{ ok: true }>('/api/cctools-openai-oauth')
   },
 }

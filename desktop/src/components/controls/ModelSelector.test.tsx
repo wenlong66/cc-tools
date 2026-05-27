@@ -4,8 +4,8 @@ import '@testing-library/jest-dom'
 
 import { ModelSelector } from './ModelSelector'
 import { useChatStore } from '../../stores/chatStore'
-import { useHahaOAuthStore } from '../../stores/hahaOAuthStore'
-import { useHahaOpenAIOAuthStore } from '../../stores/hahaOpenAIOAuthStore'
+import { useCCToolsOAuthStore } from '../../stores/cctoolsOAuthStore'
+import { useCCToolsOpenAIOAuthStore } from '../../stores/cctoolsOpenAIOAuthStore'
 import { useProviderStore } from '../../stores/providerStore'
 import { useSessionRuntimeStore } from '../../stores/sessionRuntimeStore'
 import { useSettingsStore } from '../../stores/settingsStore'
@@ -30,14 +30,14 @@ afterEach(() => {
   useProviderStore.setState(useProviderStore.getInitialState(), true)
   useSessionRuntimeStore.setState(useSessionRuntimeStore.getInitialState(), true)
   useChatStore.setState(useChatStore.getInitialState(), true)
-  useHahaOAuthStore.setState(useHahaOAuthStore.getInitialState(), true)
-  useHahaOpenAIOAuthStore.setState(useHahaOpenAIOAuthStore.getInitialState(), true)
+  useCCToolsOAuthStore.setState(useCCToolsOAuthStore.getInitialState(), true)
+  useCCToolsOpenAIOAuthStore.setState(useCCToolsOpenAIOAuthStore.getInitialState(), true)
 })
 
 // Prevent real API calls from fetchStatus on mount
 beforeEach(() => {
-  useHahaOAuthStore.setState({ fetchStatus: async () => {} })
-  useHahaOpenAIOAuthStore.setState({ fetchStatus: async () => {} })
+  useCCToolsOAuthStore.setState({ fetchStatus: async () => {} })
+  useCCToolsOpenAIOAuthStore.setState({ fetchStatus: async () => {} })
 })
 
 describe('ModelSelector', () => {
@@ -145,7 +145,7 @@ describe('ModelSelector', () => {
       },
     ]
     const setSessionRuntime = vi.fn()
-    useHahaOpenAIOAuthStore.setState({
+    useCCToolsOpenAIOAuthStore.setState({
       status: { loggedIn: true, expiresAt: null, email: null, accountId: null },
       fetchStatus: async () => {},
     })
@@ -184,15 +184,8 @@ describe('ModelSelector', () => {
   })
 
   it('hides official provider sections when OAuth is not logged in', async () => {
-    useHahaOAuthStore.setState({
-      status: {
-        loggedIn: false,
-        disabled: true,
-        message: 'OAuth login is disabled in CC-Tools; configure an API provider instead.',
-      },
-      fetchStatus: async () => {},
-    })
-    useHahaOpenAIOAuthStore.setState({ status: { loggedIn: false }, fetchStatus: async () => {} })
+    useCCToolsOAuthStore.setState({ status: { loggedIn: false }, fetchStatus: async () => {} })
+    useCCToolsOpenAIOAuthStore.setState({ status: { loggedIn: false }, fetchStatus: async () => {} })
     useSettingsStore.setState({
       locale: 'en',
       availableModels: MODELS,
