@@ -6,7 +6,7 @@
 
 import { useEffect } from 'react'
 import { open as shellOpen } from '@tauri-apps/plugin-shell'
-import { useToolsOAuthStore } from '../../stores/toolsOAuthStore'
+import { useCCToolsOAuthStore } from '../../stores/cctoolsOAuthStore'
 import { useTranslation } from '../../i18n'
 
 export function ClaudeOfficialLogin() {
@@ -20,7 +20,7 @@ export function ClaudeOfficialLogin() {
     logout,
     startPolling,
     stopPolling,
-  } = useToolsOAuthStore()
+  } = useCCToolsOAuthStore()
 
   useEffect(() => {
     fetchStatus()
@@ -35,7 +35,7 @@ export function ClaudeOfficialLogin() {
         startPolling()
       } catch (err) {
         console.error('[ClaudeOfficialLogin] shellOpen failed:', err)
-        useToolsOAuthStore.setState({
+        useCCToolsOAuthStore.setState({
           error: t('settings.claudeOfficialLogin.openBrowserFailed'),
         })
       }

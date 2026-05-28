@@ -1,7 +1,5 @@
 // desktop/src/api/cctoolsOpenAIOAuth.ts
 
-import { useCCToolsOpenAIOAuthStore, type CCToolsOpenAIOAuthState } from './hahaOpenAIOAuthStore'
+import { useCCToolsOpenAIOAuthStore } from './hahaOpenAIOAuthStore'
 
 export { useCCToolsOpenAIOAuthStore }
-
-export { type CCToolsOpenAIOAuthState }
