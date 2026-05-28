@@ -16,4 +16,12 @@ describe('build-sidecars Windows x64 target mapping', () => {
   it('uses the baseline Bun runtime so older CPUs do not crash with Illegal Instruction', () => {
     expect(extractWindowsX64BunTarget(readBuildScript())).toBe('bun-windows-x64-baseline')
   })
+
+  it('uses the current Bun executable for Windows baseline compilation to avoid runtime download failures', () => {
+    const source = readBuildScript()
+
+    expect(source).toContain('executablePath: getCompileExecutablePath(bunTarget)')
+    expect(source).toContain("if (bunTarget === 'bun-windows-x64-baseline')")
+    expect(source).toContain('return process.execPath')
+  })
 })

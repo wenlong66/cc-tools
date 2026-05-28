@@ -65,6 +65,14 @@ async function detectHostTriple() {
   return hostLine.replace('host: ', '')
 }
 
+function getCompileExecutablePath(bunTarget: string) {
+  if (bunTarget === 'bun-windows-x64-baseline') {
+    return process.execPath
+  }
+
+  return undefined
+}
+
 function mapTargetTripleToBun(triple: string) {
   switch (triple) {
     case 'aarch64-apple-darwin':
@@ -140,6 +148,7 @@ async function compileExecutable({
     compile: {
       target: bunTarget,
       outfile: outfileBase,
+      executablePath: getCompileExecutablePath(bunTarget),
       autoloadTsconfig: true,
       autoloadPackageJson: true,
       windows: {
