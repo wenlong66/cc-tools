@@ -27,9 +27,8 @@ e2e-*.png
 artifacts/quality-runs/
 artifacts/coverage/
 
-# Desktop/Web build output
+# Desktop build output
 desktop/dist/
-web/dist/
 desktop/build-artifacts/
 desktop/src-tauri/binaries/
 desktop/src-tauri/target/
@@ -47,7 +46,7 @@ desktop/brand-assets/
 docs/superpowers/
 .superpowers/
 
-# Temp server/web logs
+# Temp logs
 .tmp-*.log
 
 # Debug / temp screenshots (root dir only)

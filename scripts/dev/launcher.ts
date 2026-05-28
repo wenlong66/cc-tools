@@ -5,10 +5,10 @@ import path from 'node:path'
 import readline from 'node:readline/promises'
 import { fileURLToPath } from 'node:url'
 
-export type LaunchMode = 'web' | 'desktop'
+export type LaunchMode = 'desktop'
 export type InstallTarget = {
   dir: string
-  name: 'root' | 'web' | 'desktop'
+  name: 'root' | 'desktop'
 }
 
 type LauncherAction = 'start' | 'stop'
@@ -53,42 +53,27 @@ type BunRuntimeLike = {
 const currentFilePath = fileURLToPath(import.meta.url)
 const ROOT_DIR = path.resolve(path.dirname(currentFilePath), '..', '..')
 const LAUNCHER_STATE_PATH = path.join(ROOT_DIR, '.cc-tools', 'dev-launcher-state.json')
-const WEB_SERVER_TITLE = 'cc-tools-server'
-const WINDOW_TITLES: Record<LaunchMode, string> = {
-  web: 'cc-tools-web',
-  desktop: 'cc-tools-desktop',
-}
+const DESKTOP_WINDOW_TITLE = 'cc-tools-desktop'
 
 export function normalizeModeSelection(rawInput: string): LaunchMode | null {
   const normalized = rawInput.trim().toLowerCase()
 
-  if (normalized === '1' || normalized === 'w' || normalized === 'web') {
-    return 'web'
-  }
-
-  if (normalized === '2' || normalized === 'd' || normalized === 'desktop') {
+  if (normalized === '1' || normalized === 'd' || normalized === 'desktop') {
     return 'desktop'
   }
 
   return null
 }
 
-export function getInstallTargets(rootDir: string, mode: LaunchMode): InstallTarget[] {
-  if (mode === 'web') {
-    return [
-      { dir: rootDir, name: 'root' },
-      { dir: path.join(rootDir, 'web'), name: 'web' },
-    ]
-  }
-
+export function getInstallTargets(rootDir: string, _mode: LaunchMode): InstallTarget[] {
   return [
     { dir: rootDir, name: 'root' },
     { dir: path.join(rootDir, 'desktop'), name: 'desktop' },
   ]
 }
 
-export function toWindowsTitle(mode: LaunchMode): string {
-  return WINDOW_TITLES[mode]
+export function toWindowsTitle(_mode: LaunchMode): string {
+  return DESKTOP_WINDOW_TITLE
 }
 
 function shellQuote(value: string): string {
@@ -149,25 +134,10 @@ async function runOrThrow(
 }
 
 function buildStartSpec(mode: LaunchMode): WindowLaunch[] {
-  if (mode === 'web') {
-    return [
-      {
-        title: WEB_SERVER_TITLE,
-        command: `title ${WEB_SERVER_TITLE} && set SERVER_PORT=3456 && bun run dev:web:server`,
-        cwd: ROOT_DIR,
-      },
-      {
-        title: toWindowsTitle('web'),
-        command: `title ${toWindowsTitle('web')} && bun run dev:web:client`,
-        cwd: ROOT_DIR,
-      },
-    ]
-  }
-
   return [
     {
-      title: toWindowsTitle('desktop'),
-      command: `title ${toWindowsTitle('desktop')} && bun run dev:desktop`,
+      title: toWindowsTitle(mode),
+      command: `title ${toWindowsTitle(mode)} && bun run dev:desktop`,
       cwd: ROOT_DIR,
     },
   ]
@@ -178,8 +148,7 @@ async function promptForMode(): Promise<LaunchMode> {
   process.stdout.write('========================================\n')
   process.stdout.write('CC-Tools launcher\n')
   process.stdout.write('========================================\n')
-  process.stdout.write('  1. Web\n')
-  process.stdout.write('  2. Desktop\n\n')
+  process.stdout.write('  1. Desktop\n\n')
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -190,7 +159,7 @@ async function promptForMode(): Promise<LaunchMode> {
     while (true) {
       const answer = await rl.question('Choose mode [1]: ')
       if (answer.trim() === '') {
-        return 'web'
+        return 'desktop'
       }
 
       const mode = normalizeModeSelection(answer)
@@ -198,7 +167,7 @@ async function promptForMode(): Promise<LaunchMode> {
         return mode
       }
 
-      process.stdout.write('Invalid selection. Use 1/web or 2/desktop.\n')
+      process.stdout.write('Invalid selection. Use 1 or desktop.\n')
     }
   } finally {
     rl.close()
@@ -350,8 +319,6 @@ async function stopAll(): Promise<void> {
     await stopPid(processInfo)
   }
 
-  await stopWindow(WEB_SERVER_TITLE)
-  await stopWindow(toWindowsTitle('web'))
   await stopWindow(toWindowsTitle('desktop'))
   clearLauncherState()
 }
@@ -432,11 +399,6 @@ async function startMode(mode: LaunchMode): Promise<void> {
   writeLauncherState({ processes: launchedProcesses })
 
   process.stdout.write(`[info] ${mode} startup commands were sent.\n`)
-  if (mode === 'web') {
-    process.stdout.write(`[info] Check the ${WEB_SERVER_TITLE} and ${toWindowsTitle('web')} windows for readiness.\n`)
-    return
-  }
-
   process.stdout.write(`[info] Check the ${toWindowsTitle('desktop')} window for readiness.\n`)
 }
 
@@ -458,7 +420,7 @@ async function main(): Promise<void> {
   const secondMode = rawMode ? normalizeModeSelection(rawMode) : null
 
   if ((rawAction && rawAction !== 'start' && !firstMode) || (rawMode && !secondMode)) {
-    throw new Error(`Invalid mode. Use web or desktop.`)
+    throw new Error(`Invalid mode. Use desktop.`)
   }
 
   const mode = firstMode ?? secondMode ?? await promptForMode()

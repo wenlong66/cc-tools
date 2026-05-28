@@ -12,13 +12,12 @@
 
 </div>
 
-CC-Tools is a **Desktop + CLI + Web workspace** for Claude Code. This project is based on and modified from [wenlong66/cc-tools](https://github.com/wenlong66/cc-tools).
+CC-Tools is a **Desktop + CLI workspace** for Claude Code. This project is based on and modified from [wenlong66/cc-tools](https://github.com/wenlong66/cc-tools).
 
 <p align="center">
   <a href="#desktop-preview">Desktop Preview</a> ·
   <a href="#install-the-desktop-app">Install the Desktop App</a> ·
   <a href="#configuration-directory">Configuration Directory</a> ·
-  <a href="#web-app">Web App</a> ·
   <a href="#more-documentation">More Documentation</a>
 </p>
 
@@ -108,31 +107,6 @@ If you need to customize the global configuration root, you can override the def
 
 ---
 
-## Web App
-
-The [web/](web/) directory contains a standalone Web frontend used to expose sessions, settings, providers, MCP, skills, and related features in a browser UI.
-
-In short:
-
-- **Desktop app**: best for full local usage with the most complete feature set.
-- **Web app**: better suited for browser access, H5 pages, and future remote management extensions.
-
-For local development:
-
-```bash
-# Start the project server
-SERVER_PORT=3456 bun run src/server/index.ts
-
-# Start the Web frontend
-cd web
-bun install
-bun run dev
-```
-
-If you are a regular user, the desktop app is the recommended starting point. If you want to build or customize the browser UI, focus on the `web/` directory.
-
----
-
 ## More Documentation
 
 | Document | Description |
@@ -160,7 +134,6 @@ If you are a regular user, the desktop app is the recommended starting point. If
 | Language | TypeScript |
 | Desktop app | Tauri 2 |
 | Desktop UI | React + Vite |
-| Web UI | React + Vite |
 | Local runtime | [Bun](https://bun.sh) |
 | Terminal UI | React + [Ink](https://github.com/vadimdemedes/ink) |
 | CLI parsing | Commander.js |

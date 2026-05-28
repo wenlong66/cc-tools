@@ -15,33 +15,22 @@ describe('normalizeModeSelection', () => {
     expect(normalizeModeSelection('   ')).toBeNull()
   })
 
-  it('accepts web aliases', () => {
-    expect(normalizeModeSelection('1')).toBe('web')
-    expect(normalizeModeSelection('w')).toBe('web')
-    expect(normalizeModeSelection('web')).toBe('web')
-  })
-
   it('accepts desktop aliases', () => {
-    expect(normalizeModeSelection('2')).toBe('desktop')
+    expect(normalizeModeSelection('1')).toBe('desktop')
     expect(normalizeModeSelection('d')).toBe('desktop')
     expect(normalizeModeSelection('desktop')).toBe('desktop')
   })
 
   it('returns null for unsupported selections', () => {
+    expect(normalizeModeSelection('2')).toBeNull()
     expect(normalizeModeSelection('3')).toBeNull()
     expect(normalizeModeSelection('server')).toBeNull()
+    expect(normalizeModeSelection('web')).toBeNull()
   })
 })
 
 describe('getInstallTargets', () => {
   const root = 'E:/work/cc-tools'
-
-  it('returns root and web targets for web mode', () => {
-    expect(getInstallTargets(root, 'web')).toEqual([
-      { dir: root, name: 'root' },
-      { dir: path.join(root, 'web'), name: 'web' },
-    ])
-  })
 
   it('returns root and desktop targets for desktop mode', () => {
     expect(getInstallTargets(root, 'desktop')).toEqual([
@@ -53,7 +42,6 @@ describe('getInstallTargets', () => {
 
 describe('toWindowsTitle', () => {
   it('maps modes to the expected window title', () => {
-    expect(toWindowsTitle('web')).toBe('cc-tools-web')
     expect(toWindowsTitle('desktop')).toBe('cc-tools-desktop')
   })
 })
@@ -72,16 +60,16 @@ describe('parseLauncherState', () => {
 
 describe('parseLaunchedProcessOutput', () => {
   it('parses valid PowerShell JSON output', () => {
-    expect(parseLaunchedProcessOutput('{"pid":123,"startedAtUtc":456}', 'cc-tools-web')).toEqual({
+    expect(parseLaunchedProcessOutput('{"pid":123,"startedAtUtc":456}', 'cc-tools-desktop')).toEqual({
       pid: 123,
       startedAtUtc: 456,
-      title: 'cc-tools-web',
+      title: 'cc-tools-desktop',
     })
   })
 
   it('throws on malformed PowerShell JSON output', () => {
-    expect(() => parseLaunchedProcessOutput('warning text', 'cc-tools-web')).toThrow(
-      'Failed to parse process metadata for cc-tools-web',
+    expect(() => parseLaunchedProcessOutput('warning text', 'cc-tools-desktop')).toThrow(
+      'Failed to parse process metadata for cc-tools-desktop',
     )
   })
 })

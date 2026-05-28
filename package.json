@@ -11,8 +11,6 @@
     "start": "bun run ./bin/cc-tools",
     "dev:launcher": "bun run scripts/dev/launcher.ts",
     "dev:launcher:stop": "bun run scripts/dev/launcher.ts stop",
-    "dev:web:server": "bun run src/server/index.ts",
-    "dev:web:client": "cd web && bun run dev",
     "dev:desktop": "cd desktop && bun run tauri dev",
     "check:pr": "bun run scripts/pr/check-pr.ts",
     "check:impact": "bun run scripts/pr/impact-report.ts",

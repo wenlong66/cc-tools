@@ -12,13 +12,12 @@
 
 </div>
 
-CC-Tools 是一个面向 Claude Code 的 **桌面端 + CLI + Web 工作台**。项目基于 [wenlong66/cc-tools](https://github.com/wenlong66/cc-tools) 修改
+CC-Tools 是一个面向 Claude Code 的 **桌面端 + CLI 工作台**。项目基于 [wenlong66/cc-tools](https://github.com/wenlong66/cc-tools) 修改
 
 <p align="center">
   <a href="#桌面端预览">桌面端预览</a> ·
   <a href="#安装桌面端">安装桌面端</a> ·
   <a href="#配置目录说明">配置目录说明</a> ·
-  <a href="#web-端说明">Web 端说明</a> ·
   <a href="#更多文档">更多文档</a>
 </p>
 
@@ -109,31 +108,6 @@ CC-Tools 运行时默认使用 **`.cc-tools` 目录**，不是直接读取 Claud
 
 ---
 
-## Web 端说明
-
-仓库中的 [web/](web/) 是一个独立的 Web 前端，主要用于把会话、设置、Provider、MCP、Skills 等能力以浏览器界面展示出来。
-
-简单理解：
-
-- **桌面端**：更适合本机长期使用，能力最完整。
-- **Web 端**：更适合做浏览器访问、H5 页面承载和后续远程管理扩展。
-
-本地开发可直接使用：
-
-```bash
-# 启动项目服务端
-SERVER_PORT=3456 bun run src/server/index.ts
-
-# 启动 Web 前端
-cd web
-bun install
-bun run dev
-```
-
-如果你只是普通使用者，优先推荐直接下载桌面端；如果你想二次开发浏览器界面，再关注 `web/` 目录即可。
-
----
-
 ## 更多文档
 
 | 文档 | 说明 |
@@ -161,7 +135,6 @@ bun run dev
 | 语言 | TypeScript |
 | 桌面 APP | Tauri 2 |
 | 桌面 UI | React + Vite |
-| Web UI | React + Vite |
 | 本地运行时 | [Bun](https://bun.sh) |
 | 终端 UI | React + [Ink](https://github.com/vadimdemedes/ink) |
 | CLI 解析 | Commander.js |
