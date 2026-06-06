@@ -8,7 +8,8 @@ import { useUIStore } from '../stores/uiStore'
 import { useUpdateStore } from '../stores/updateStore'
 import type { SavedProvider } from '../types/provider'
 import type { ProviderPreset } from '../types/providerPreset'
-import type { AppMode, ThemeMode, UpdateProxySettings } from '../types/settings'
+import type { AppMode, ChatSendBehavior, ThemeMode, UpdateProxySettings } from '../types/settings'
+import { browserHost } from '../lib/desktopHost/browserHost'
 
 const MOCK_DELETE_PROVIDER = vi.fn()
 const MOCK_GET_SETTINGS = vi.fn()
@@ -122,6 +123,39 @@ vi.mock('../components/chat/CodeViewer', () => ({
   CodeViewer: ({ code }: { code: string }) => <pre data-testid="code-viewer">{code}</pre>,
 }))
 
+function installElectronDesktopHost() {
+  window.desktopHost = {
+    ...browserHost,
+    kind: 'electron',
+    isDesktop: true,
+    capabilities: {
+      ...browserHost.capabilities,
+      appMode: true,
+      dialogs: true,
+      notifications: true,
+      shell: true,
+      updates: true,
+      zoom: true,
+    },
+    app: {
+      getVersion: vi.fn().mockResolvedValue('0.3.2'),
+    },
+    dialogs: {
+      ...browserHost.dialogs,
+      open: vi.fn((options) => tauriDialogMock.open(options)),
+    },
+    shell: {
+      ...browserHost.shell,
+      open: vi.fn().mockResolvedValue(undefined),
+    },
+    appMode: {
+      ...browserHost.appMode,
+      prepareRestart: vi.fn(() => tauriCoreMock.invoke('prepare_for_app_mode_restart')),
+      restart: vi.fn(() => tauriProcessMock.relaunch()),
+    },
+  }
+}
+
 describe('Settings > General tab', () => {
   beforeEach(() => {
     vi.useRealTimers()
@@ -143,6 +177,8 @@ describe('Settings > General tab', () => {
     tauriProcessMock.relaunch.mockReset()
     tauriProcessMock.relaunch.mockResolvedValue(undefined)
     delete (window as unknown as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__
+    delete (window as unknown as { __TAURI__?: object }).__TAURI__
+    installElectronDesktopHost()
     MOCK_GET_SETTINGS.mockResolvedValue({})
     MOCK_UPDATE_SETTINGS.mockResolvedValue({})
     providerStoreState.providers = []
@@ -166,6 +202,7 @@ describe('Settings > General tab', () => {
       thinkingEnabled: true,
       skipWebFetchPreflight: true,
       desktopNotificationsEnabled: true,
+      chatSendBehavior: 'enter',
       responseLanguage: '',
       uiZoom: 1,
       webSearch: { mode: 'auto', tavilyApiKey: '', braveApiKey: '' },
@@ -192,6 +229,9 @@ describe('Settings > General tab', () => {
       }),
       setDesktopNotificationsEnabled: vi.fn().mockImplementation(async (enabled: boolean) => {
         useSettingsStore.setState({ desktopNotificationsEnabled: enabled })
+      }),
+      setChatSendBehavior: vi.fn().mockImplementation(async (chatSendBehavior: ChatSendBehavior) => {
+        useSettingsStore.setState({ chatSendBehavior })
       }),
       setResponseLanguage: vi.fn().mockImplementation(async (language: string) => {
         useSettingsStore.setState({ responseLanguage: language })
@@ -328,6 +368,18 @@ describe('Settings > General tab', () => {
     expect((networkHeading.compareDocumentPosition(webFetchHeading) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
   })
 
+  it('lets users choose Ctrl or Command Enter as the chat send shortcut', async () => {
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getByRole('button', { name: /Ctrl\/Cmd\+Enter sends/i }))
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().setChatSendBehavior).toHaveBeenCalledWith('modifierEnter')
+    })
+    expect(screen.getByRole('button', { name: /Ctrl\/Cmd\+Enter sends/i })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('saves provider network timeout and manual proxy from General settings', async () => {
     render(<Settings />)
 
@@ -345,7 +397,8 @@ describe('Settings > General tab', () => {
     expect(screen.getByText('Enter an HTTP or HTTPS proxy URL.')).toBeInTheDocument()
     expect(saveButton).toBeDisabled()
 
-    fireEvent.change(proxyInput, { target: { value: '  http://127.0.0.1:7890  ' } })
+    fireEvent.change(proxyInput, { target: { value: '  http://user:p%40ss@127.0.0.1:7890  ' } })
+    expect(screen.getByText('HTTP and HTTPS proxy URLs are supported. For authenticated proxies, use http://user:password@127.0.0.1:7890; the URL is saved with network settings.')).toBeInTheDocument()
     const timeoutInput = screen.getByLabelText('AI request timeout')
     expect(timeoutInput).toHaveAttribute('type', 'number')
     expect(screen.queryByRole('slider', { name: 'AI request timeout' })).not.toBeInTheDocument()
@@ -360,7 +413,7 @@ describe('Settings > General tab', () => {
       aiRequestTimeoutMs: 180_000,
       proxy: {
         mode: 'manual',
-        url: 'http://127.0.0.1:7890',
+        url: 'http://user:p%40ss@127.0.0.1:7890',
       },
     })
     expect(useUIStore.getState().toasts[useUIStore.getState().toasts.length - 1]).toMatchObject({
@@ -391,9 +444,6 @@ describe('Settings > General tab', () => {
   })
 
   it('keeps data storage at the bottom of General settings', () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
-
     render(<Settings />)
 
     fireEvent.click(screen.getByText('General'))
@@ -406,9 +456,6 @@ describe('Settings > General tab', () => {
   })
 
   it('lets desktop users choose a portable data directory and relaunch immediately', async () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
-
     render(<Settings />)
 
     fireEvent.click(screen.getByText('General'))
@@ -430,8 +477,6 @@ describe('Settings > General tab', () => {
   })
 
   it('switches back to the system directory without deleting portable data', async () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
     useSettingsStore.setState({
       appMode: {
         mode: 'portable',
@@ -458,9 +503,6 @@ describe('Settings > General tab', () => {
   })
 
   it('validates portable directory input and lets users reset to the app-side folder', async () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
-
     render(<Settings />)
 
     fireEvent.click(screen.getByText('General'))
@@ -476,8 +518,6 @@ describe('Settings > General tab', () => {
   })
 
   it('shows folder picker failures as an inline storage error', async () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
     tauriDialogMock.open.mockRejectedValueOnce(new Error('dialog unavailable'))
 
     render(<Settings />)
@@ -489,8 +529,6 @@ describe('Settings > General tab', () => {
   })
 
   it('treats external CLAUDE_CONFIG_DIR as the controlling data source', async () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
     useSettingsStore.setState({
       appMode: {
         mode: 'portable',
@@ -516,9 +554,6 @@ describe('Settings > General tab', () => {
   })
 
   it('keeps mode switch confirmation cancelable before restart starts', async () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
-
     render(<Settings />)
 
     fireEvent.click(screen.getByText('General'))
@@ -534,8 +569,6 @@ describe('Settings > General tab', () => {
   })
 
   it('shows restart preparation failures without relaunching', async () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
     tauriCoreMock.invoke.mockRejectedValueOnce(new Error('restart preparation failed'))
 
     render(<Settings />)
@@ -549,8 +582,6 @@ describe('Settings > General tab', () => {
   })
 
   it('shows the saved restart-required state inside the storage section', () => {
-    const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
-    tauriWindow.__TAURI_INTERNALS__ = {}
     useSettingsStore.setState({ appModeRequiresRestart: true })
 
     render(<Settings />)

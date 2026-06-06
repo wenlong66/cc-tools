@@ -7,6 +7,7 @@ import {
   isThemeMode,
   type AppMode,
   type AppModeConfig,
+  type ChatSendBehavior,
   type DesktopTerminalSettings,
   type DesktopTerminalStartupShell,
   type H5AccessDiagnostics,
@@ -20,7 +21,7 @@ import {
   type UpdateProxySettings,
   type WebSearchSettings,
 } from '../types/settings'
-import { isTauriRuntime } from '../lib/desktopRuntime'
+import { getDesktopHost } from '../lib/desktopHost'
 import type { Locale } from '../i18n'
 import {
   APP_ZOOM_CONTROL_STEP,
@@ -40,10 +41,12 @@ export const UI_ZOOM_STEP = APP_ZOOM_CONTROL_STEP
 export const UI_ZOOM_DEFAULT = DEFAULT_APP_ZOOM
 let desktopNotificationsSaveQueue: Promise<void> = Promise.resolve()
 
+const VALID_LOCALES: readonly Locale[] = ['en', 'zh', 'zh-TW', 'jp', 'kr']
+
 function getStoredLocale(): Locale {
   try {
     const stored = localStorage.getItem(LOCALE_STORAGE_KEY)
-    if (stored === 'en' || stored === 'zh') return stored
+    if (stored && (VALID_LOCALES as readonly string[]).includes(stored)) return stored as Locale
   } catch { /* localStorage unavailable */ }
   return 'zh'
 }
@@ -57,6 +60,7 @@ type SettingsStore = {
   activeProviderName: string | null
   locale: Locale
   theme: ThemeMode
+  chatSendBehavior: ChatSendBehavior
   skipWebFetchPreflight: boolean
   desktopNotificationsEnabled: boolean
   desktopTerminal: DesktopTerminalSettings
@@ -82,6 +86,7 @@ type SettingsStore = {
   setThinkingEnabled: (enabled: boolean) => Promise<void>
   setLocale: (locale: Locale) => void
   setTheme: (theme: ThemeMode) => Promise<void>
+  setChatSendBehavior: (behavior: ChatSendBehavior) => Promise<void>
   setSkipWebFetchPreflight: (enabled: boolean) => Promise<void>
   setDesktopNotificationsEnabled: (enabled: boolean) => Promise<void>
   setDesktopTerminal: (settings: DesktopTerminalSettings) => Promise<void>
@@ -133,12 +138,13 @@ const DEFAULT_NETWORK_SETTINGS: NetworkSettings = {
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
   permissionMode: 'default',
   currentModel: null,
-  effortLevel: 'medium',
+  effortLevel: 'max',
   thinkingEnabled: true,
   availableModels: [],
   activeProviderName: null,
   locale: getStoredLocale(),
   theme: useUIStore.getState().theme,
+  chatSendBehavior: 'enter',
   skipWebFetchPreflight: true,
   desktopNotificationsEnabled: false,
   desktopTerminal: DEFAULT_DESKTOP_TERMINAL_SETTINGS,
@@ -189,6 +195,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         effortLevel: level,
         thinkingEnabled: userSettings.alwaysThinkingEnabled !== false,
         theme,
+        chatSendBehavior: normalizeChatSendBehavior(userSettings.chatSendBehavior),
         skipWebFetchPreflight: userSettings.skipWebFetchPreflight !== false,
         desktopNotificationsEnabled: userSettings.desktopNotificationsEnabled === true,
         desktopTerminal: normalizeDesktopTerminalSettings(userSettings.desktopTerminal),
@@ -269,6 +276,18 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     } catch {
       set({ theme: prev })
       useUIStore.getState().setTheme(prev)
+    }
+  },
+
+  setChatSendBehavior: async (behavior) => {
+    const prev = get().chatSendBehavior
+    const next = normalizeChatSendBehavior(behavior)
+    set({ chatSendBehavior: next })
+    try {
+      await settingsApi.updateUser({ chatSendBehavior: next })
+    } catch (error) {
+      set({ chatSendBehavior: prev })
+      throw error
     }
   },
 
@@ -423,16 +442,17 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   fetchAppMode: async () => {
-    if (!isTauriRuntime()) return
+    const host = getDesktopHost()
+    if (!host.isDesktop) return
     try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      const result: AppModeConfig = await invoke('get_app_mode')
+      const result: AppModeConfig = await host.appMode.get()
       set({ appMode: result })
     } catch { /* silently ignore - not in Tauri or command unavailable */ }
   },
 
   setAppMode: async (mode, portableDir) => {
-    if (!isTauriRuntime()) return
+    const host = getDesktopHost()
+    if (!host.isDesktop) return
     const prev = get().appMode
     const newMode: AppModeConfig = {
       ...prev,
@@ -447,8 +467,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
     set({ appMode: newMode, appModeRequiresRestart: true })
     try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('set_app_mode', {
+      await host.appMode.set({
         mode,
         portableDir: newMode.portableDir || null,
       })
@@ -464,6 +483,10 @@ function normalizeWebSearchSettings(settings: WebSearchSettings | undefined): We
     tavilyApiKey: settings?.tavilyApiKey ?? '',
     braveApiKey: settings?.braveApiKey ?? '',
   }
+}
+
+function normalizeChatSendBehavior(value: unknown): ChatSendBehavior {
+  return value === 'modifierEnter' ? 'modifierEnter' : 'enter'
 }
 
 function isUpdateProxyMode(value: unknown): value is UpdateProxyMode {

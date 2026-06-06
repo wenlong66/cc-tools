@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { browserHost } from '../lib/desktopHost/browserHost'
 
 const check = vi.fn()
 const relaunch = vi.fn()
@@ -16,22 +17,46 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke,
 }))
 
+function installElectronUpdateHost() {
+  window.desktopHost = {
+    ...browserHost,
+    kind: 'electron',
+    isDesktop: true,
+    capabilities: {
+      ...browserHost.capabilities,
+      updates: true,
+    },
+    updates: {
+      ...browserHost.updates,
+      check,
+      prepareInstall: () => invoke('prepare_for_update_install'),
+      cancelInstall: () => invoke('cancel_update_install'),
+      relaunch,
+    },
+  }
+}
+
 describe('updateStore', () => {
   beforeEach(() => {
     check.mockReset()
     relaunch.mockReset()
     invoke.mockReset()
     window.localStorage.clear()
-    Object.defineProperty(window, '__TAURI_INTERNALS__', {
-      configurable: true,
-      value: {},
-    })
+    installElectronUpdateHost()
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__')
+    Reflect.deleteProperty(window, '__TAURI__')
   })
 
   it('stores available update metadata after a successful check', async () => {
+    const download = vi.fn(async (onEvent?: (event: unknown) => void) => {
+      onEvent?.({ event: 'Started', data: { contentLength: 200 } })
+      onEvent?.({ event: 'Progress', data: { chunkLength: 200 } })
+      onEvent?.({ event: 'Finished' })
+    })
     const update = {
       version: '0.2.0',
       body: 'Bug fixes and performance improvements',
+      download,
       close: vi.fn().mockResolvedValue(undefined),
     }
     check.mockResolvedValue(update)
@@ -42,16 +67,130 @@ describe('updateStore', () => {
     const result = await useUpdateStore.getState().checkForUpdates()
 
     expect(result).toBe(update)
-    expect(useUpdateStore.getState().status).toBe('available')
     expect(useUpdateStore.getState().availableVersion).toBe('0.2.0')
     expect(useUpdateStore.getState().releaseNotes).toBe('Bug fixes and performance improvements')
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(useUpdateStore.getState().status).toBe('downloaded')
     expect(useUpdateStore.getState().shouldPrompt).toBe(true)
+  })
+
+  it('checks, installs, and relaunches through an injected desktop host', async () => {
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__')
+    const download = vi.fn(async (onEvent?: (event: unknown) => void) => {
+      onEvent?.({ event: 'Started', data: { contentLength: 100 } })
+      onEvent?.({ event: 'Progress', data: { chunkLength: 100 } })
+      onEvent?.({ event: 'Finished' })
+    })
+    const install = vi.fn().mockResolvedValue(undefined)
+    const checkUpdate = vi.fn().mockResolvedValue({
+      version: '0.4.0',
+      body: 'Electron host update',
+      download,
+      install,
+      close: vi.fn().mockResolvedValue(undefined),
+    })
+    const prepareInstall = vi.fn().mockResolvedValue(undefined)
+    const relaunchHost = vi.fn().mockResolvedValue(undefined)
+
+    window.desktopHost = {
+      ...browserHost,
+      kind: 'electron',
+      isDesktop: true,
+      capabilities: {
+        ...browserHost.capabilities,
+        updates: true,
+      },
+      updates: {
+        ...browserHost.updates,
+        check: checkUpdate,
+        prepareInstall,
+        relaunch: relaunchHost,
+      },
+    }
+
+    vi.resetModules()
+    const { useUpdateStore } = await import('./updateStore')
+
+    const result = await useUpdateStore.getState().checkForUpdates()
+    await useUpdateStore.getState().installUpdate()
+
+    expect(result?.version).toBe('0.4.0')
+    expect(checkUpdate).toHaveBeenCalledWith(undefined)
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(prepareInstall).toHaveBeenCalledTimes(1)
+    expect(install).toHaveBeenCalledTimes(1)
+    expect(relaunchHost).toHaveBeenCalledTimes(1)
+    expect(invoke).not.toHaveBeenCalled()
+    expect(relaunch).not.toHaveBeenCalled()
+  })
+
+  it('does not show the global prompt while a background download is still running', async () => {
+    let finishDownload!: () => void
+    const download = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDownload = resolve
+        }),
+    )
+    check.mockResolvedValue({
+      version: '0.2.0',
+      body: 'Notes',
+      download,
+      close: vi.fn().mockResolvedValue(undefined),
+    })
+
+    vi.resetModules()
+    const { useUpdateStore } = await import('./updateStore')
+
+    await useUpdateStore.getState().checkForUpdates()
+
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(useUpdateStore.getState().status).toBe('downloading')
+    expect(useUpdateStore.getState().shouldPrompt).toBe(false)
+
+    finishDownload()
+    await Promise.resolve()
+
+    expect(useUpdateStore.getState().status).toBe('downloaded')
+    expect(useUpdateStore.getState().shouldPrompt).toBe(true)
+  })
+
+  it('reuses the in-flight background download when checking again', async () => {
+    let finishDownload!: () => void
+    const download = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDownload = resolve
+        }),
+    )
+    const update = {
+      version: '0.2.0',
+      body: 'Notes',
+      download,
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    check.mockResolvedValue(update)
+
+    vi.resetModules()
+    const { useUpdateStore } = await import('./updateStore')
+
+    await useUpdateStore.getState().checkForUpdates()
+    await useUpdateStore.getState().checkForUpdates()
+
+    expect(check).toHaveBeenCalledTimes(1)
+    expect(download).toHaveBeenCalledTimes(1)
+
+    finishDownload()
+    await Promise.resolve()
+
+    expect(useUpdateStore.getState().status).toBe('downloaded')
   })
 
   it('passes the configured manual update proxy to update checks', async () => {
     const update = {
       version: '0.2.0',
       body: 'Bug fixes and performance improvements',
+      download: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
     }
     check.mockResolvedValue(update)
@@ -72,9 +211,14 @@ describe('updateStore', () => {
   })
 
   it('does not re-prompt for the same version after dismissing once', async () => {
+    const download = vi.fn(async (onEvent?: (event: unknown) => void) => {
+      onEvent?.({ event: 'Started', data: { contentLength: 100 } })
+      onEvent?.({ event: 'Finished' })
+    })
     check.mockResolvedValue({
       version: '0.2.0',
       body: 'Bug fixes and performance improvements',
+      download,
       close: vi.fn().mockResolvedValue(undefined),
     })
 
@@ -92,18 +236,29 @@ describe('updateStore', () => {
     expect(useUpdateStore.getState().status).toBe('available')
     expect(useUpdateStore.getState().availableVersion).toBe('0.2.0')
     expect(useUpdateStore.getState().shouldPrompt).toBe(false)
+    expect(download).toHaveBeenCalledTimes(1)
   })
 
   it('prompts again when a newer version is available after dismissing an older one', async () => {
+    const oldDownload = vi.fn(async (onEvent?: (event: unknown) => void) => {
+      onEvent?.({ event: 'Started', data: { contentLength: 100 } })
+      onEvent?.({ event: 'Finished' })
+    })
+    const newDownload = vi.fn(async (onEvent?: (event: unknown) => void) => {
+      onEvent?.({ event: 'Started', data: { contentLength: 100 } })
+      onEvent?.({ event: 'Finished' })
+    })
     check
       .mockResolvedValueOnce({
         version: '0.2.0',
         body: 'Bug fixes and performance improvements',
+        download: oldDownload,
         close: vi.fn().mockResolvedValue(undefined),
       })
       .mockResolvedValueOnce({
         version: '0.3.0',
         body: 'New release',
+        download: newDownload,
         close: vi.fn().mockResolvedValue(undefined),
       })
 
@@ -115,10 +270,89 @@ describe('updateStore', () => {
     await useUpdateStore.getState().checkForUpdates({ silent: true })
 
     expect(useUpdateStore.getState().availableVersion).toBe('0.3.0')
+    await Promise.resolve()
+    expect(useUpdateStore.getState().status).toBe('downloaded')
     expect(useUpdateStore.getState().shouldPrompt).toBe(true)
   })
 
-  it('downloads, stops sidecars, installs, and relaunches', async () => {
+  it('checks and downloads when manual download starts without a pending update', async () => {
+    const download = vi.fn(async (onEvent?: (event: unknown) => void) => {
+      onEvent?.({ event: 'Started', data: { contentLength: 100 } })
+      onEvent?.({ event: 'Finished' })
+    })
+    check.mockResolvedValue({
+      version: '0.2.0',
+      body: 'Notes',
+      download,
+      close: vi.fn().mockResolvedValue(undefined),
+    })
+
+    vi.resetModules()
+    const { useUpdateStore } = await import('./updateStore')
+
+    await useUpdateStore.getState().downloadUpdate()
+
+    expect(check).toHaveBeenCalledTimes(1)
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(useUpdateStore.getState().status).toBe('downloaded')
+    expect(useUpdateStore.getState().shouldPrompt).toBe(true)
+  })
+
+  it('does not download again when the pending update is already downloaded', async () => {
+    const download = vi.fn(async (onEvent?: (event: unknown) => void) => {
+      onEvent?.({ event: 'Started', data: { contentLength: 100 } })
+      onEvent?.({ event: 'Finished' })
+    })
+    check.mockResolvedValue({
+      version: '0.2.0',
+      body: 'Notes',
+      download,
+      close: vi.fn().mockResolvedValue(undefined),
+    })
+
+    vi.resetModules()
+    const { useUpdateStore } = await import('./updateStore')
+
+    await useUpdateStore.getState().checkForUpdates()
+    await useUpdateStore.getState().downloadUpdate()
+
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(useUpdateStore.getState().status).toBe('downloaded')
+    expect(useUpdateStore.getState().progressPercent).toBe(100)
+  })
+
+  it('reuses an in-flight manual download', async () => {
+    let finishDownload!: () => void
+    const download = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDownload = resolve
+        }),
+    )
+    check.mockResolvedValue({
+      version: '0.2.0',
+      body: 'Notes',
+      download,
+      close: vi.fn().mockResolvedValue(undefined),
+    })
+
+    vi.resetModules()
+    const { useUpdateStore } = await import('./updateStore')
+
+    await useUpdateStore.getState().checkForUpdates({ autoDownload: false })
+    const firstDownload = useUpdateStore.getState().downloadUpdate()
+    await Promise.resolve()
+    const secondDownload = useUpdateStore.getState().downloadUpdate()
+
+    expect(download).toHaveBeenCalledTimes(1)
+
+    finishDownload()
+    await Promise.all([firstDownload, secondDownload])
+
+    expect(useUpdateStore.getState().status).toBe('downloaded')
+  })
+
+  it('downloads in the background, then installs and relaunches without downloading again', async () => {
     const download = vi.fn(async (onEvent?: (event: unknown) => void) => {
       onEvent?.({ event: 'Started', data: { contentLength: 200 } })
       onEvent?.({ event: 'Progress', data: { chunkLength: 50 } })
@@ -141,6 +375,8 @@ describe('updateStore', () => {
     const { useUpdateStore } = await import('./updateStore')
 
     await useUpdateStore.getState().checkForUpdates()
+    expect(useUpdateStore.getState().status).toBe('downloaded')
+    expect(useUpdateStore.getState().shouldPrompt).toBe(true)
     await useUpdateStore.getState().installUpdate()
 
     expect(download).toHaveBeenCalledTimes(1)
@@ -200,6 +436,72 @@ describe('updateStore', () => {
     expect(freshInstall).toHaveBeenCalledTimes(1)
   })
 
+  it('does not publish update-ready when the proxy changes during download', async () => {
+    let finishDownload!: () => void
+    const download = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDownload = resolve
+        }),
+    )
+    check.mockResolvedValue({
+      version: '0.2.0',
+      body: 'Notes',
+      download,
+      close: vi.fn().mockResolvedValue(undefined),
+    })
+
+    vi.resetModules()
+    const { useSettingsStore } = await import('./settingsStore')
+    const { useUpdateStore } = await import('./updateStore')
+
+    await useUpdateStore.getState().checkForUpdates()
+    useSettingsStore.setState({
+      updateProxy: {
+        mode: 'manual',
+        url: 'http://127.0.0.1:7890',
+      },
+    })
+    finishDownload()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(useUpdateStore.getState().status).toBe('available')
+    expect(useUpdateStore.getState().shouldPrompt).toBe(false)
+  })
+
+  it('keeps the update available and retryable when background download fails', async () => {
+    const download = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network dropped'))
+      .mockResolvedValueOnce(undefined)
+
+    check.mockResolvedValue({
+      version: '0.2.0',
+      body: 'Notes',
+      download,
+      install: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    })
+
+    vi.resetModules()
+    const { useUpdateStore } = await import('./updateStore')
+
+    await useUpdateStore.getState().checkForUpdates()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(useUpdateStore.getState().status).toBe('available')
+    expect(useUpdateStore.getState().error).toContain('network dropped')
+    expect(useUpdateStore.getState().shouldPrompt).toBe(false)
+
+    await useUpdateStore.getState().downloadUpdate()
+
+    expect(download).toHaveBeenCalledTimes(2)
+    expect(useUpdateStore.getState().status).toBe('downloaded')
+    expect(useUpdateStore.getState().shouldPrompt).toBe(true)
+  })
+
   it('clears the native exit guard when install fails after sidecars stop', async () => {
     const download = vi.fn(async (onEvent?: (event: unknown) => void) => {
       onEvent?.({ event: 'Started', data: { contentLength: 100 } })
@@ -224,7 +526,7 @@ describe('updateStore', () => {
 
     expect(invoke).toHaveBeenNthCalledWith(1, 'prepare_for_update_install')
     expect(invoke).toHaveBeenNthCalledWith(2, 'cancel_update_install')
-    expect(useUpdateStore.getState().status).toBe('available')
+    expect(useUpdateStore.getState().status).toBe('downloaded')
     expect(useUpdateStore.getState().error).toContain('installer failed')
     expect(useUpdateStore.getState().shouldPrompt).toBe(true)
   })

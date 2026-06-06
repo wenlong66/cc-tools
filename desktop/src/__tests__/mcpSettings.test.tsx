@@ -136,6 +136,32 @@ describe('McpSettings', () => {
     })
   })
 
+  it('keeps cached MCP servers visible while a remount refresh is pending', async () => {
+    vi.mocked(sessionsApi.getRecentProjects).mockImplementation(() => new Promise(() => {}))
+    useMcpStore.setState({
+      servers: [{
+        name: 'cached-user',
+        scope: 'user',
+        transport: 'http',
+        enabled: true,
+        status: 'connected',
+        statusLabel: 'Connected',
+        configLocation: '/tmp/config',
+        summary: 'https://example.com/mcp',
+        canEdit: true,
+        canRemove: true,
+        canReconnect: true,
+        canToggle: true,
+        config: { type: 'http', url: 'https://example.com/mcp', headers: {} },
+      }],
+    })
+
+    render(<McpSettings />)
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByText('cached-user')).toBeInTheDocument()
+  })
+
   it('renders the empty state and add button', async () => {
     await renderLoadedMcpSettings()
 
@@ -343,6 +369,41 @@ describe('McpSettings', () => {
     })
 
     expect(toggleServer).toHaveBeenCalledWith(server, '/workspace/project', 'session-1')
+  })
+
+  it('clears the selected MCP server when returning to the list', async () => {
+    const selectServer = vi.fn()
+    const server = {
+      name: 'global-user',
+      scope: 'user',
+      transport: 'http',
+      enabled: true,
+      status: 'connected',
+      statusLabel: 'Connected',
+      configLocation: '/tmp/config',
+      summary: 'https://example.com/mcp',
+      canEdit: true,
+      canRemove: true,
+      canReconnect: true,
+      canToggle: true,
+      config: { type: 'http', url: 'https://example.com/mcp', headers: {} },
+    } as const
+
+    useMcpStore.setState({
+      servers: [server],
+      selectServer,
+    })
+
+    await renderLoadedMcpSettings()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open global-user' }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /back/i }))
+    })
+
+    expect(selectServer).toHaveBeenLastCalledWith(null)
   })
 
   it('requires an explicitly selected project before creating local MCP servers', async () => {

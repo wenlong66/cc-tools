@@ -28,9 +28,16 @@ import {
   WorkspaceDiffSurface,
   workspacePrismTheme,
 } from './WorkspaceCodeSurface'
+import { WorkspaceFileOpenWith } from './WorkspaceFileOpenWith'
 
 type WorkspacePanelProps = {
   sessionId: string
+  /**
+   * When hosted inside the unified WorkbenchPanel, the close action lives in the
+   * shared workbench mode strip. Set this to drop WorkspacePanel's own close
+   * button so the panel header doesn't render a duplicate close control.
+   */
+  embedded?: boolean
 }
 
 type TreeNodeProps = {
@@ -905,7 +912,7 @@ function TreeNode({
   )
 }
 
-export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
+export function WorkspacePanel({ sessionId, embedded = false }: WorkspacePanelProps) {
   const t = useTranslation()
   const addToast = useUIStore((state) => state.addToast)
   const [filterQuery, setFilterQuery] = useState('')
@@ -1385,8 +1392,12 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
   return (
     <aside
       data-testid="workspace-panel"
-      className="flex h-full shrink-0 border-l border-[var(--color-border)] bg-[var(--color-surface)]"
-      style={{ width: panelWidth, maxWidth: panelMaxWidth, minWidth: panelMinWidth }}
+      className={
+        embedded
+          ? 'flex h-full min-h-0 w-full min-w-0 bg-[var(--color-surface)]'
+          : 'flex h-full shrink-0 border-l border-[var(--color-border)] bg-[var(--color-surface)]'
+      }
+      style={embedded ? undefined : { width: panelWidth, maxWidth: panelMaxWidth, minWidth: panelMinWidth }}
     >
       {hasPreviewTabs && (
         <div className="flex min-w-0 flex-1 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -1449,11 +1460,13 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
               label={t('workspace.refresh')}
               onClick={handleRefresh}
             />
-            <ToolbarIconButton
-              icon="close"
-              label={t('workspace.closePanel')}
-              onClick={() => closePanel(sessionId)}
-            />
+            {!embedded && (
+              <ToolbarIconButton
+                icon="close"
+                label={t('workspace.closePanel')}
+                onClick={() => closePanel(sessionId)}
+              />
+            )}
           </div>
         </div>
 
@@ -1501,6 +1514,10 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
             <span aria-hidden="true" className="material-symbols-outlined text-[14px] text-[var(--color-text-tertiary)]">file_copy</span>
             <span>{t('workspace.copyAbsolutePath')}</span>
           </button>
+          <WorkspaceFileOpenWith
+            absolutePath={resolveWorkspaceAttachmentPath(status?.workDir, fileContextMenu.path)}
+            onAfterSelect={() => setFileContextMenu(null)}
+          />
         </div>
       )}
     </aside>

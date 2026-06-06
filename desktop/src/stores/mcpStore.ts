@@ -54,6 +54,8 @@ function replaceServer(
   return servers.map((item, itemIndex) => (itemIndex === index ? normalizedNext : item))
 }
 
+let fetchServersRequestId = 0
+
 export const useMcpStore = create<McpStore>((set) => ({
   servers: [],
   selectedServer: null,
@@ -61,6 +63,7 @@ export const useMcpStore = create<McpStore>((set) => ({
   error: null,
 
   fetchServers: async (projectPaths, fallbackCwd) => {
+    const requestId = ++fetchServersRequestId
     set({ isLoading: true, error: null })
     try {
       const normalizedPaths = Array.from(new Set((projectPaths ?? []).filter(Boolean)))
@@ -89,8 +92,10 @@ export const useMcpStore = create<McpStore>((set) => ({
         }
       }
 
+      if (requestId !== fetchServersRequestId) return
       set({ servers: [...deduped.values()], isLoading: false })
     } catch (error) {
+      if (requestId !== fetchServersRequestId) return
       set({
         isLoading: false,
         error: error instanceof Error ? error.message : 'Failed to load MCP servers',

@@ -9,6 +9,7 @@ import QRCode from 'qrcode'
 
 type ImTab = 'feishu' | 'wechat' | 'dingtalk' | 'telegram'
 type ImPlatform = 'telegram' | 'feishu' | 'wechat' | 'dingtalk'
+type AdapterUnbindTarget = 'wechatAccount' | 'dingtalkBot'
 
 const FEISHU_CREATE_BOT_URL = 'https://open.feishu.cn/page/openclaw?form=multiAgent'
 
@@ -33,7 +34,7 @@ export function AdapterSettings() {
   const [activeIm, setActiveIm] = useState<ImTab>('feishu')
 
   // Server —— serverUrl 不再暴露在 UI 里（见下方 Server URL 注释），
-  // 桌面端用 Tauri env var 注入动态端口。
+  // 桌面端用 sidecar env var 注入动态端口。
   const [defaultProjectDir, setDefaultProjectDir] = useState('')
 
   // Telegram
@@ -82,6 +83,7 @@ export function AdapterSettings() {
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [pendingUnbind, setPendingUnbind] = useState<{ platform: ImPlatform; userId: string | number } | null>(null)
+  const [pendingAdapterUnbind, setPendingAdapterUnbind] = useState<AdapterUnbindTarget | null>(null)
   const [isUnbinding, setIsUnbinding] = useState(false)
 
   useEffect(() => {
@@ -330,6 +332,7 @@ export function AdapterSettings() {
     } finally {
       setIsUnbindingWechatAccount(false)
       setIsWechatBinding(false)
+      setPendingAdapterUnbind(null)
     }
   }, [unbindWechatAccount, fetchConfig, t])
 
@@ -346,6 +349,7 @@ export function AdapterSettings() {
       setDtAuthError(err instanceof Error ? err.message : t('settings.adapters.dingtalkUnbindFailed'))
     } finally {
       setIsUnbindingDtBot(false)
+      setPendingAdapterUnbind(null)
     }
   }, [unbindDingtalkBot, fetchConfig, t])
 
@@ -464,7 +468,7 @@ export function AdapterSettings() {
         </div>
       </section>
 
-      {/* Server URL —— 之前是个手填字段，但桌面端 Tauri 启动 adapter sidecar
+      {/* Server URL —— 之前是个手填字段，但桌面端启动 adapter sidecar
           时已经把 server 的动态端口通过 ADAPTER_SERVER_URL env var 注进去了，
           loadConfig() 里 env 优先级高于这里的 file value，所以这个字段在桌面
           运行时完全不会被读到。用户也根本不知道该填什么端口（每次启动随机）。
@@ -606,7 +610,7 @@ export function AdapterSettings() {
                     {config.wechat?.accountId ? t('settings.adapters.wechatRebind') : t('settings.adapters.wechatBind')}
                   </Button>
                   {config.wechat?.accountId && (
-                    <Button onClick={handleUnbindWechatAccount} loading={isUnbindingWechatAccount} size="sm" variant="danger">
+                    <Button onClick={() => setPendingAdapterUnbind('wechatAccount')} loading={isUnbindingWechatAccount} size="sm" variant="danger">
                       {t('settings.adapters.wechatUnbindAccount')}
                     </Button>
                   )}
@@ -656,7 +660,7 @@ export function AdapterSettings() {
                     {t('settings.adapters.dingtalkStartAuth')}
                   </Button>
                   {(config.dingtalk?.clientId || dtClientId) && (
-                    <Button onClick={handleUnbindDingtalkBot} loading={isUnbindingDtBot} size="sm" variant="danger">
+                    <Button onClick={() => setPendingAdapterUnbind('dingtalkBot')} loading={isUnbindingDtBot} size="sm" variant="danger">
                       {t('settings.adapters.dingtalkUnbindBot')}
                     </Button>
                   )}
@@ -790,6 +794,26 @@ export function AdapterSettings() {
         cancelLabel={t('common.cancel')}
         confirmVariant="danger"
         loading={isUnbinding}
+      />
+      <ConfirmDialog
+        open={pendingAdapterUnbind !== null}
+        onClose={() => {
+          if (isUnbindingWechatAccount || isUnbindingDtBot) return
+          setPendingAdapterUnbind(null)
+        }}
+        onConfirm={pendingAdapterUnbind === 'wechatAccount' ? handleUnbindWechatAccount : handleUnbindDingtalkBot}
+        title={pendingAdapterUnbind === 'wechatAccount'
+          ? t('settings.adapters.wechatUnbindAccount')
+          : t('settings.adapters.dingtalkUnbindBot')}
+        body={pendingAdapterUnbind === 'wechatAccount'
+          ? t('settings.adapters.wechatUnbindAccountConfirm')
+          : t('settings.adapters.dingtalkUnbindBotConfirm')}
+        confirmLabel={pendingAdapterUnbind === 'wechatAccount'
+          ? t('settings.adapters.wechatUnbindAccount')
+          : t('settings.adapters.dingtalkUnbindBot')}
+        cancelLabel={t('common.cancel')}
+        confirmVariant="danger"
+        loading={isUnbindingWechatAccount || isUnbindingDtBot}
       />
     </div>
   )

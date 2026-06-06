@@ -34,13 +34,98 @@ afterEach(() => {
   useHahaOpenAIOAuthStore.setState(useHahaOpenAIOAuthStore.getInitialState(), true)
 })
 
-// Prevent real API calls from fetchStatus on mount
 beforeEach(() => {
   useHahaOAuthStore.setState({ fetchStatus: async () => {} })
   useHahaOpenAIOAuthStore.setState({ fetchStatus: async () => {} })
 })
 
 describe('ModelSelector', () => {
+  it('does not query official OAuth status when mounted', () => {
+    const fetchClaudeStatus = vi.fn(async () => {})
+    const fetchOpenAIStatus = vi.fn(async () => {})
+    useHahaOAuthStore.setState({ fetchStatus: fetchClaudeStatus })
+    useHahaOpenAIOAuthStore.setState({ fetchStatus: fetchOpenAIStatus })
+    useSettingsStore.setState({
+      locale: 'en',
+      availableModels: MODELS,
+      currentModel: MODELS[0],
+      activeProviderName: 'Provider A',
+    })
+    useProviderStore.setState({
+      providers: [],
+      activeId: 'provider-a',
+      hasLoadedProviders: true,
+      isLoading: true,
+    })
+
+    render(<ModelSelector runtimeKey="session-no-keychain-prompt" />)
+
+    expect(fetchClaudeStatus).not.toHaveBeenCalled()
+    expect(fetchOpenAIStatus).not.toHaveBeenCalled()
+  })
+
+  it('queries official OAuth status once when the runtime dropdown is opened', async () => {
+    const fetchClaudeStatus = vi.fn(async () => {})
+    const fetchOpenAIStatus = vi.fn(async () => {})
+    useHahaOAuthStore.setState({ fetchStatus: fetchClaudeStatus })
+    useHahaOpenAIOAuthStore.setState({ fetchStatus: fetchOpenAIStatus })
+    useSettingsStore.setState({
+      locale: 'en',
+      availableModels: MODELS,
+      currentModel: MODELS[0],
+      activeProviderName: 'Provider A',
+    })
+    useProviderStore.setState({
+      providers: [{
+        id: 'provider-a',
+        presetId: 'custom',
+        name: 'Provider A',
+        apiKey: '***',
+        baseUrl: 'https://api.example.com',
+        apiFormat: 'anthropic',
+        models: {
+          main: 'provider-main',
+          haiku: '',
+          sonnet: '',
+          opus: '',
+        },
+      }],
+      activeId: 'provider-a',
+      hasLoadedProviders: true,
+      isLoading: true,
+    })
+
+    render(<ModelSelector runtimeKey="session-oauth-on-open" />)
+
+    await clickByRole(/alpha/i)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await clickByRole(/alpha/i)
+
+    expect(fetchClaudeStatus).toHaveBeenCalledTimes(1)
+    expect(fetchOpenAIStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not query official OAuth status for plain model dropdowns', async () => {
+    const fetchClaudeStatus = vi.fn(async () => {})
+    const fetchOpenAIStatus = vi.fn(async () => {})
+    useHahaOAuthStore.setState({ fetchStatus: fetchClaudeStatus })
+    useHahaOpenAIOAuthStore.setState({ fetchStatus: fetchOpenAIStatus })
+    useSettingsStore.setState({
+      locale: 'en',
+      availableModels: MODELS,
+      currentModel: MODELS[0],
+    })
+
+    render(<ModelSelector value="alpha" onChange={vi.fn()} />)
+
+    await clickByRole(/alpha/i)
+
+    expect(fetchClaudeStatus).not.toHaveBeenCalled()
+    expect(fetchOpenAIStatus).not.toHaveBeenCalled()
+  })
+
   it('uses controlled model selection without mutating settings directly', async () => {
     const onChange = vi.fn()
     useSettingsStore.setState({
@@ -57,16 +142,14 @@ describe('ModelSelector', () => {
     expect(onChange).toHaveBeenCalledWith('beta')
   })
 
-  it('routes uncontrolled model and effort changes through settings actions', async () => {
+  it('routes uncontrolled model changes through settings actions', async () => {
     const setModel = vi.fn(async () => {})
-    const setEffort = vi.fn(async () => {})
     useSettingsStore.setState({
       locale: 'en',
       availableModels: MODELS,
       currentModel: MODELS[0],
-      effortLevel: 'medium',
+      effortLevel: 'max',
       setModel,
-      setEffort,
     })
 
     render(<ModelSelector />)
@@ -74,10 +157,6 @@ describe('ModelSelector', () => {
     await clickByRole(/alpha/i)
     await clickByRole(/Beta/)
     expect(setModel).toHaveBeenCalledWith('beta')
-
-    await clickByRole(/Alpha/)
-    await clickByRole(/^High$/)
-    expect(setEffort).toHaveBeenCalledWith('high')
   })
 
   it('selects provider-scoped runtime models and mirrors session selections', async () => {
@@ -122,11 +201,73 @@ describe('ModelSelector', () => {
     expect(useSessionRuntimeStore.getState().selections['session-1']).toEqual({
       providerId: 'provider-a',
       modelId: 'provider-fast',
+      effortLevel: 'max',
     })
     expect(setSessionRuntime).toHaveBeenCalledWith('session-1', {
       providerId: 'provider-a',
       modelId: 'provider-fast',
+      effortLevel: 'max',
     })
+  })
+
+  it('keeps runtime effort scoped to the selected session', async () => {
+    const setSessionRuntime = vi.fn()
+    useSettingsStore.setState({
+      locale: 'en',
+      availableModels: MODELS,
+      currentModel: MODELS[0],
+      activeProviderName: 'Provider A',
+      effortLevel: 'max',
+    })
+    useProviderStore.setState({
+      providers: [{
+        id: 'provider-a',
+        presetId: 'custom',
+        name: 'Provider A',
+        apiKey: '***',
+        baseUrl: 'https://api.example.com',
+        apiFormat: 'anthropic',
+        models: {
+          main: 'provider-main',
+          haiku: 'provider-fast',
+          sonnet: 'provider-main',
+          opus: '',
+        },
+      }],
+      activeId: 'provider-a',
+      hasLoadedProviders: true,
+      isLoading: true,
+    })
+    useSessionRuntimeStore.getState().setSelection('session-2', {
+      providerId: 'provider-a',
+      modelId: 'provider-main',
+      effortLevel: 'max',
+    })
+    useChatStore.setState({
+      setSessionRuntime,
+    } as Partial<ReturnType<typeof useChatStore.getState>>)
+
+    render(<ModelSelector runtimeKey="session-1" />)
+
+    await clickByRole(/alpha/i)
+    await clickByRole(/^High$/)
+
+    expect(useSessionRuntimeStore.getState().selections['session-1']).toEqual({
+      providerId: 'provider-a',
+      modelId: 'alpha',
+      effortLevel: 'high',
+    })
+    expect(useSessionRuntimeStore.getState().selections['session-2']).toEqual({
+      providerId: 'provider-a',
+      modelId: 'provider-main',
+      effortLevel: 'max',
+    })
+    expect(setSessionRuntime).toHaveBeenCalledWith('session-1', {
+      providerId: 'provider-a',
+      modelId: 'alpha',
+      effortLevel: 'high',
+    })
+    expect(useSettingsStore.getState().effortLevel).toBe('max')
   })
 
   it('uses the ChatGPT Official catalog when that built-in provider is active', async () => {
@@ -176,10 +317,12 @@ describe('ModelSelector', () => {
     expect(useSessionRuntimeStore.getState().selections['session-openai']).toEqual({
       providerId: OPENAI_OFFICIAL_PROVIDER_ID,
       modelId: 'gpt-5.5',
+      effortLevel: 'max',
     })
     expect(setSessionRuntime).toHaveBeenCalledWith('session-openai', {
       providerId: OPENAI_OFFICIAL_PROVIDER_ID,
       modelId: 'gpt-5.5',
+      effortLevel: 'max',
     })
   })
 

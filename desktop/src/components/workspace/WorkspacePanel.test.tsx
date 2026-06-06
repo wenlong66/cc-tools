@@ -241,6 +241,15 @@ vi.mock('../../api/sessions', () => ({
   })(),
 }))
 
+vi.mock('../../api/openTargets', () => ({
+  openTargetsApi: {
+    list: vi.fn().mockResolvedValue({ platform: 'darwin', targets: [], primaryTargetId: null, cachedAt: 0, ttlMs: 60000 }),
+    open: vi.fn().mockResolvedValue({ ok: true, targetId: '', path: '' }),
+  },
+}))
+
+vi.mock('@tauri-apps/plugin-shell', () => ({ open: vi.fn().mockResolvedValue(undefined) }))
+
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useWorkspaceChatContextStore } from '../../stores/workspaceChatContextStore'

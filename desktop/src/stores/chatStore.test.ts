@@ -19,6 +19,7 @@ const {
   updateTabTitleMock,
   updateTabStatusMock,
   updateSessionTitleMock,
+  updateSessionPermissionModeMock,
   sessionStoreSnapshot,
   cliTaskStoreSnapshot,
 } = vi.hoisted(() => ({
@@ -38,6 +39,7 @@ const {
   updateTabTitleMock: vi.fn(),
   updateTabStatusMock: vi.fn(),
   updateSessionTitleMock: vi.fn(),
+  updateSessionPermissionModeMock: vi.fn(),
   sessionStoreSnapshot: {
     sessions: [] as Array<{
       id: string
@@ -103,6 +105,7 @@ vi.mock('./sessionStore', () => ({
     getState: () => ({
       sessions: sessionStoreSnapshot.sessions,
       updateSessionTitle: updateSessionTitleMock,
+      updateSessionPermissionMode: updateSessionPermissionModeMock,
     }),
   },
 }))
@@ -138,6 +141,8 @@ function makeSession(overrides: Partial<PerSessionState> = {}): PerSessionState 
     messages: [],
     chatState: 'streaming',
     connectionState: 'connected',
+    historyStatus: 'idle',
+    historyError: null,
     streamingText: '',
     streamingToolInput: '',
     activeToolUseId: null,
@@ -430,6 +435,134 @@ describe('chatStore history mapping', () => {
       },
       {
         type: 'tool_use',
+      },
+    ])
+  })
+
+  it('restores persisted image user messages as renderable attachments without exposing image metadata text', () => {
+    const messages: MessageEntry[] = [
+      {
+        id: 'image-user-1',
+        type: 'user',
+        timestamp: '2026-06-04T08:07:15.803Z',
+        content: [
+          { type: 'text', text: '解释一下这张图片讲了什么东西' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/jpeg',
+              data: 'JPEGBASE64',
+            },
+          },
+          {
+            type: 'text',
+            text: '[Image source: /Users/test/.claude/uploads/session-1/pasted-image.jpeg]',
+          },
+        ],
+      },
+    ]
+
+    const mapped = mapHistoryMessagesToUiMessages(messages)
+
+    expect(mapped).toMatchObject([
+      {
+        id: 'image-user-1',
+        type: 'user_text',
+        content: '解释一下这张图片讲了什么东西',
+        modelContent: [
+          '解释一下这张图片讲了什么东西',
+          '[Image source: /Users/test/.claude/uploads/session-1/pasted-image.jpeg]',
+        ].join('\n'),
+        attachments: [{
+          type: 'image',
+          name: 'pasted-image.jpeg',
+          path: '/Users/test/.claude/uploads/session-1/pasted-image.jpeg',
+          data: 'data:image/jpeg;base64,JPEGBASE64',
+          mimeType: 'image/jpeg',
+        }],
+      },
+    ])
+  })
+
+  it('restores multiple persisted images with their matching source paths in order', () => {
+    const mapped = mapHistoryMessagesToUiMessages([
+      {
+        id: 'multi-image-user-1',
+        type: 'user',
+        timestamp: '2026-06-04T08:07:15.803Z',
+        content: [
+          { type: 'text', text: '对比这两张图' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/jpeg',
+              data: 'FIRSTJPEG',
+            },
+          },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'SECONDPNG',
+            },
+          },
+          {
+            type: 'text',
+            text: '[Image source: /Users/test/.claude/uploads/session-1/first-pasted-image.jpeg]',
+          },
+          {
+            type: 'text',
+            text: '[Image source: /Users/test/.claude/uploads/session-1/second-pasted-image.png]',
+          },
+        ],
+      },
+    ])
+
+    expect(mapped).toMatchObject([
+      {
+        id: 'multi-image-user-1',
+        type: 'user_text',
+        content: '对比这两张图',
+        attachments: [
+          {
+            type: 'image',
+            name: 'first-pasted-image.jpeg',
+            path: '/Users/test/.claude/uploads/session-1/first-pasted-image.jpeg',
+            data: 'data:image/jpeg;base64,FIRSTJPEG',
+            mimeType: 'image/jpeg',
+          },
+          {
+            type: 'image',
+            name: 'second-pasted-image.png',
+            path: '/Users/test/.claude/uploads/session-1/second-pasted-image.png',
+            data: 'data:image/png;base64,SECONDPNG',
+            mimeType: 'image/png',
+          },
+        ],
+      },
+    ])
+  })
+
+  it('keeps image-looking text visible when history has no image block', () => {
+    const mapped = mapHistoryMessagesToUiMessages([
+      {
+        id: 'plain-text-user-1',
+        type: 'user',
+        timestamp: '2026-06-04T08:07:15.803Z',
+        content: [
+          { type: 'text', text: '[Image source: /tmp/example.png]' },
+        ],
+      },
+    ])
+
+    expect(mapped).toMatchObject([
+      {
+        id: 'plain-text-user-1',
+        type: 'user_text',
+        content: '[Image source: /tmp/example.png]',
       },
     ])
   })
@@ -1178,6 +1311,82 @@ describe('chatStore history mapping', () => {
     )
   })
 
+  it('can send a visual selection turn without rendering the full model prompt as user text', () => {
+    useChatStore.setState({
+      sessions: {
+        [TEST_SESSION_ID]: {
+          messages: [],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
+    })
+
+    useChatStore.getState().sendMessage(
+      TEST_SESSION_ID,
+      '请根据截图中编号 1 的 <h1> 修改：这个标题更轻一点',
+      [{
+        type: 'image',
+        name: '<h1>',
+        data: 'data:image/png;base64,AAAA',
+        mimeType: 'image/png',
+        note: '这个标题更轻一点',
+      }],
+      {
+        hideDisplayContent: true,
+        displayAttachments: [{
+          type: 'image',
+          name: '<h1>',
+          data: 'data:image/png;base64,AAAA',
+          mimeType: 'image/png',
+          note: '这个标题更轻一点',
+        }],
+      },
+    )
+
+    expect(useChatStore.getState().sessions[TEST_SESSION_ID]?.messages).toMatchObject([
+      {
+        type: 'user_text',
+        content: '',
+        modelContent: '请根据截图中编号 1 的 <h1> 修改：这个标题更轻一点',
+        attachments: [{
+          type: 'image',
+          name: '<h1>',
+          data: 'data:image/png;base64,AAAA',
+          mimeType: 'image/png',
+          note: '这个标题更轻一点',
+        }],
+      },
+    ])
+    expect(sendMock).toHaveBeenCalledWith(
+      TEST_SESSION_ID,
+      {
+        type: 'user_message',
+        content: '请根据截图中编号 1 的 <h1> 修改：这个标题更轻一点',
+        attachments: [{
+          type: 'image',
+          name: '<h1>',
+          data: 'data:image/png;base64,AAAA',
+          mimeType: 'image/png',
+          note: '这个标题更轻一点',
+        }],
+      },
+    )
+  })
+
   it('stores server-materialized attachment prefixes for rewind matching', () => {
     useChatStore.setState({
       sessions: {
@@ -1614,6 +1823,7 @@ describe('chatStore history mapping', () => {
     useSessionRuntimeStore.getState().setSelection(TEST_SESSION_ID, {
       providerId: 'provider-1',
       modelId: 'kimi-k2.6',
+      effortLevel: 'high',
     })
 
     useChatStore.getState().connectToSession(TEST_SESSION_ID)
@@ -1622,6 +1832,7 @@ describe('chatStore history mapping', () => {
       type: 'set_runtime_config',
       providerId: 'provider-1',
       modelId: 'kimi-k2.6',
+      effortLevel: 'high',
     })
     expect(sendMock.mock.calls.slice(0, 2)).toEqual([
       [
@@ -1630,6 +1841,7 @@ describe('chatStore history mapping', () => {
           type: 'set_runtime_config',
           providerId: 'provider-1',
           modelId: 'kimi-k2.6',
+          effortLevel: 'high',
         },
       ],
       [TEST_SESSION_ID, { type: 'prewarm_session' }],
@@ -1666,16 +1878,36 @@ describe('chatStore history mapping', () => {
     })
   })
 
+  it('retries history loading for an already connected empty session', async () => {
+    useChatStore.setState({
+      sessions: {
+        [TEST_SESSION_ID]: makeSession({
+          connectionState: 'connected',
+          chatState: 'idle',
+          messages: [],
+        }),
+      },
+    })
+
+    useChatStore.getState().connectToSession(TEST_SESSION_ID)
+    await Promise.resolve()
+
+    expect(sessionsApi.getMessages).toHaveBeenCalledWith(TEST_SESSION_ID)
+    expect(sendMock).not.toHaveBeenCalledWith(TEST_SESSION_ID, { type: 'prewarm_session' })
+  })
+
   it('sends explicit runtime overrides over websocket', () => {
     useChatStore.getState().setSessionRuntime(TEST_SESSION_ID, {
       providerId: null,
       modelId: 'claude-opus-4-7',
+      effortLevel: 'max',
     })
 
     expect(sendMock).toHaveBeenCalledWith(TEST_SESSION_ID, {
       type: 'set_runtime_config',
       providerId: null,
       modelId: 'claude-opus-4-7',
+      effortLevel: 'max',
     })
   })
 
@@ -1787,6 +2019,36 @@ describe('chatStore history mapping', () => {
       type: 'set_permission_mode',
       mode: 'acceptEdits',
     })
+    expect(updateSessionPermissionModeMock).toHaveBeenCalledWith('session-1', 'acceptEdits')
+  })
+
+  it('mirrors CLI permission-mode broadcasts locally without echoing back to the server', () => {
+    sendMock.mockReset()
+    updateSessionPermissionModeMock.mockReset()
+
+    // CLI 退出 plan 后恢复到 bypassPermissions，回传 permission_mode_changed。
+    useChatStore.getState().handleServerMessage(TEST_SESSION_ID, {
+      type: 'permission_mode_changed',
+      mode: 'bypassPermissions',
+    })
+
+    // 本地镜像被校正……
+    expect(updateSessionPermissionModeMock).toHaveBeenCalledWith(TEST_SESSION_ID, 'bypassPermissions')
+    // ……但绝不能再 set_permission_mode 回发给 CLI，否则形成回环。
+    expect(sendMock).not.toHaveBeenCalled()
+  })
+
+  it('ignores permission-mode broadcasts for modes the selector cannot render', () => {
+    updateSessionPermissionModeMock.mockReset()
+
+    // 'auto' 不在桌面端 PermissionMode 内（仅在 CLI 启用对应特性时存在），
+    // 直接忽略，避免选择器拿到无法渲染的值。
+    useChatStore.getState().handleServerMessage(TEST_SESSION_ID, {
+      type: 'permission_mode_changed',
+      mode: 'auto' as never,
+    })
+
+    expect(updateSessionPermissionModeMock).not.toHaveBeenCalled()
   })
 
   it('stores terminal task notifications for agent tool cards', () => {
@@ -2380,6 +2642,32 @@ describe('chatStore history mapping', () => {
     ])
     expect(session?.messages.some((message) => message.type === 'compact_summary' && message.phase === 'compacting')).toBe(false)
     expect(updateTabStatusMock).toHaveBeenLastCalledWith(TEST_SESSION_ID, 'error')
+  })
+
+  it('preserves business error codes from server error messages', () => {
+    useChatStore.setState({
+      sessions: {
+        [TEST_SESSION_ID]: makeSession({
+          messages: [],
+          chatState: 'streaming',
+        }),
+      },
+    })
+
+    useChatStore.getState().handleServerMessage(TEST_SESSION_ID, {
+      type: 'error',
+      message: 'This model does not support images.',
+      code: 'invalid_request',
+      businessErrorCode: 'image_unsupported',
+    })
+
+    const session = useChatStore.getState().sessions[TEST_SESSION_ID]
+    expect(session?.messages[session.messages.length - 1]).toMatchObject({
+      type: 'error',
+      message: 'This model does not support images.',
+      code: 'invalid_request',
+      businessErrorCode: 'image_unsupported',
+    })
   })
 
   it('removes the transient compacting card when compacting status ends without a boundary', () => {

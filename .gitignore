@@ -29,6 +29,7 @@ artifacts/coverage/
 
 # Desktop build output
 desktop/dist/
+desktop/electron-dist/
 desktop/build-artifacts/
 desktop/src-tauri/binaries/
 desktop/src-tauri/target/
@@ -75,3 +76,7 @@ runtime/__pycache__
 
 # Codex logs
 .codex-logs/
+
+# Local AI assistant artifacts (graph, notes)
+CLAUDE.md
+graphify-out/

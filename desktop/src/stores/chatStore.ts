@@ -53,10 +53,14 @@ export type ComposerReferenceInsertion = {
   nonce: number
 }
 
+export type ComposerPrefillMode = 'replace' | 'append'
+
 export type PerSessionState = {
   messages: UIMessage[]
   chatState: ChatState
   connectionState: ConnectionState
+  historyStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  historyError?: string | null
   streamingText: string
   streamingToolInput: string
   activeToolUseId: string | null
@@ -85,6 +89,7 @@ export type PerSessionState = {
   composerPrefill?: {
     text: string
     attachments?: UIAttachment[]
+    mode?: ComposerPrefillMode
     nonce: number
   } | null
   composerInsertion?: ComposerReferenceInsertion | null
@@ -95,6 +100,8 @@ const DEFAULT_SESSION_STATE: PerSessionState = {
   messages: [],
   chatState: 'idle',
   connectionState: 'disconnected',
+  historyStatus: 'idle',
+  historyError: null,
   streamingText: '',
   streamingToolInput: '',
   activeToolUseId: null,
@@ -130,7 +137,7 @@ type ChatStore = {
     sessionId: string,
     content: string,
     attachments?: AttachmentRef[],
-    options?: { displayContent?: string; displayAttachments?: AttachmentRef[] },
+    options?: { displayContent?: string; displayAttachments?: AttachmentRef[]; hideDisplayContent?: boolean },
   ) => void
   respondToPermission: (
     sessionId: string,
@@ -153,8 +160,9 @@ type ChatStore = {
   reloadHistory: (sessionId: string) => Promise<void>
   queueComposerPrefill: (
     sessionId: string,
-    prefill: { text: string; attachments?: UIAttachment[] },
+    prefill: { text: string; attachments?: UIAttachment[]; mode?: ComposerPrefillMode },
   ) => void
+  clearComposerPrefill: (sessionId: string, nonce?: number) => void
   queueComposerInsertion: (
     sessionId: string,
     insertion: Omit<ComposerReferenceInsertion, 'nonce'>,
@@ -791,6 +799,8 @@ async function fetchAndMapSessionHistory(sessionId: string) {
   }
 }
 
+const historyLoadsInFlight = new Map<string, Promise<void>>()
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   sessions: {},
 
@@ -800,7 +810,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     void useCLITaskStore.getState().fetchSessionTasks(sessionId)
 
     const existing = get().sessions[sessionId]
-    if (existing && existing.connectionState !== 'disconnected') return
+    if (existing && existing.connectionState !== 'disconnected') {
+      if (
+        existing.messages.length === 0 &&
+        (existing.historyStatus === 'idle' || existing.historyStatus === 'error')
+      ) {
+        void get().loadHistory(sessionId)
+      }
+      return
+    }
 
     set((s) => ({
       sessions: {
@@ -864,10 +882,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   sendMessage: (sessionId, content, attachments, options) => {
-    const userFacingContent =
-      options?.displayContent?.trim() || content.trim()
-    const modelFacingContent = buildModelContent(content, attachments)
     const isMemberSession = !!useTeamStore.getState().getMemberBySessionId(sessionId)
+    const hideDisplayContent = !isMemberSession && options?.hideDisplayContent === true
+    const userFacingContent =
+      hideDisplayContent
+        ? ''
+        : options?.displayContent?.trim() || content.trim()
+    const modelFacingContent = buildModelContent(content, attachments)
     const visibleAttachments = options?.displayAttachments ?? attachments
     const uiAttachments: UIAttachment[] | undefined =
       visibleAttachments && visibleAttachments.length > 0
@@ -896,7 +917,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     if (!isMemberSession) {
-      updateOptimisticSessionTitle(sessionId, userFacingContent)
+      updateOptimisticSessionTitle(sessionId, userFacingContent || content.trim())
     }
 
     set((s) => {
@@ -1010,6 +1031,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setSessionPermissionMode: (sessionId, mode) => {
     if (!get().sessions[sessionId]) return
+    useSessionStore.getState().updateSessionPermissionMode(sessionId, mode)
     wsManager.send(sessionId, { type: 'set_permission_mode', mode })
   },
 
@@ -1041,54 +1063,91 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   loadHistory: async (sessionId) => {
-    try {
-      const {
-        uiMessages,
-        activeGoal,
-        restoredNotifications,
-        restoredBackgroundTasks,
-        lastTodos,
-        hasMessagesAfterTaskCompletion,
-      } = await fetchAndMapSessionHistory(sessionId)
-      set((state) => {
-        const session = state.sessions[sessionId]
-        if (!session) return state
-        if (session.messages.length > 0) {
+    const existingLoad = historyLoadsInFlight.get(sessionId)
+    if (existingLoad) return existingLoad
+
+    let load!: Promise<void>
+    load = (async () => {
+      try {
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return state
+          return {
+            sessions: updateSessionIn(state.sessions, sessionId, () => ({
+              historyStatus: 'loading',
+              historyError: null,
+            })),
+          }
+        })
+        const {
+          uiMessages,
+          activeGoal,
+          restoredNotifications,
+          restoredBackgroundTasks,
+          lastTodos,
+          hasMessagesAfterTaskCompletion,
+        } = await fetchAndMapSessionHistory(sessionId)
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return state
+          if (session.messages.length > 0) {
+            return { sessions: updateSessionIn(state.sessions, sessionId, (s) => ({
+              historyStatus: 'ready',
+              historyError: null,
+              activeGoal: activeGoal ?? s.activeGoal ?? null,
+              agentTaskNotifications: { ...s.agentTaskNotifications, ...restoredNotifications },
+              backgroundAgentTasks: mergeBackgroundAgentTaskRecords(
+                s.backgroundAgentTasks ?? {},
+                restoredBackgroundTasks,
+              ),
+              messages: mergeRestoredHistoryIntoLiveMessages(
+                mergeBackgroundTaskMessages(s.messages, restoredBackgroundTasks),
+                uiMessages,
+              ),
+            })) }
+          }
           return { sessions: updateSessionIn(state.sessions, sessionId, (s) => ({
-            activeGoal: activeGoal ?? s.activeGoal ?? null,
+            historyStatus: 'ready',
+            historyError: null,
+            messages: mergeBackgroundTaskMessages(uiMessages, restoredBackgroundTasks),
+            activeGoal,
             agentTaskNotifications: { ...s.agentTaskNotifications, ...restoredNotifications },
             backgroundAgentTasks: mergeBackgroundAgentTaskRecords(
               s.backgroundAgentTasks ?? {},
               restoredBackgroundTasks,
             ),
-            messages: mergeRestoredHistoryIntoLiveMessages(
-              mergeBackgroundTaskMessages(s.messages, restoredBackgroundTasks),
-              uiMessages,
-            ),
           })) }
+        })
+        if (lastTodos && lastTodos.length > 0) {
+          const taskStore = useCLITaskStore.getState()
+          if (taskStore.sessionId === sessionId && taskStore.tasks.length === 0) taskStore.setTasksFromTodos(lastTodos, sessionId)
+        } else {
+          useCLITaskStore.getState().setTasksFromTodos([], sessionId)
         }
-        return { sessions: updateSessionIn(state.sessions, sessionId, (s) => ({
-          messages: mergeBackgroundTaskMessages(uiMessages, restoredBackgroundTasks),
-          activeGoal,
-          agentTaskNotifications: { ...s.agentTaskNotifications, ...restoredNotifications },
-          backgroundAgentTasks: mergeBackgroundAgentTaskRecords(
-            s.backgroundAgentTasks ?? {},
-            restoredBackgroundTasks,
-          ),
-        })) }
-      })
-      if (lastTodos && lastTodos.length > 0) {
-        const taskStore = useCLITaskStore.getState()
-        if (taskStore.sessionId === sessionId && taskStore.tasks.length === 0) taskStore.setTasksFromTodos(lastTodos, sessionId)
-      } else {
-        useCLITaskStore.getState().setTasksFromTodos([], sessionId)
+        if (hasMessagesAfterTaskCompletion) {
+          useCLITaskStore.getState().markCompletedAndDismissed(sessionId)
+        }
+      } catch (error) {
+        // Session may not have messages yet
+        set((state) => {
+          const session = state.sessions[sessionId]
+          if (!session) return state
+          return {
+            sessions: updateSessionIn(state.sessions, sessionId, () => ({
+              historyStatus: 'error',
+              historyError: error instanceof Error ? error.message : String(error),
+            })),
+          }
+        })
+      } finally {
+        if (historyLoadsInFlight.get(sessionId) === load) {
+          historyLoadsInFlight.delete(sessionId)
+        }
       }
-      if (hasMessagesAfterTaskCompletion) {
-        useCLITaskStore.getState().markCompletedAndDismissed(sessionId)
-      }
-    } catch {
-      // Session may not have messages yet
-    }
+    })()
+
+    historyLoadsInFlight.set(sessionId, load)
+    return load
   },
 
   reloadHistory: async (sessionId) => {
@@ -1108,6 +1167,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (session.elapsedTimer) clearInterval(session.elapsedTimer)
         return {
           sessions: updateSessionIn(state.sessions, sessionId, () => ({
+            historyStatus: 'ready',
+            historyError: null,
             messages: mergeBackgroundTaskMessages(uiMessages, restoredBackgroundTasks),
             activeGoal,
             agentTaskNotifications: restoredNotifications,
@@ -1146,9 +1207,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         composerPrefill: {
           text: prefill.text,
           attachments: prefill.attachments,
+          mode: prefill.mode,
           nonce: Date.now(),
         },
       })),
+    }))
+  },
+
+  clearComposerPrefill: (sessionId, nonce) => {
+    set((state) => ({
+      sessions: updateSessionIn(state.sessions, sessionId, (session) => {
+        if (nonce !== undefined && session.composerPrefill?.nonce !== nonce) return {}
+        return { composerPrefill: null }
+      }),
     }))
   },
 
@@ -1270,6 +1341,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         // Sync tab status
         useTabStore.getState().updateTabStatus(sessionId, msg.state === 'idle' ? 'idle' : 'running')
         break
+
+      case 'permission_mode_changed': {
+        // CLI 是权限模式的真相来源。这里把它恢复/切换后的权威值校正到本地镜像。
+        // 注意：只更新本地状态，**不要**走 setSessionPermissionMode —— 那会把
+        // set_permission_mode 再回发给 CLI 形成回环。未知模式（如未启用对应特性
+        // 的 'auto'）直接忽略，避免选择器拿到无法渲染的值。
+        const KNOWN_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk']
+        if (KNOWN_MODES.includes(msg.mode)) {
+          useSessionStore.getState().updateSessionPermissionMode(sessionId, msg.mode)
+        }
+        break
+      }
 
       case 'content_start': {
         const session = get().sessions[sessionId]
@@ -1595,7 +1678,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             newMessages = appendAssistantTextMessage(newMessages, pendingText, Date.now())
           }
           newMessages = dropTailCompactingCompactSummary(newMessages)
-          newMessages = [...newMessages, { id: nextId(), type: 'error', message: msg.message, code: msg.code, timestamp: Date.now() }]
+          newMessages = [
+            ...newMessages,
+            {
+              id: nextId(),
+              type: 'error',
+              message: msg.message,
+              code: msg.code,
+              ...(msg.businessErrorCode ? { businessErrorCode: msg.businessErrorCode } : {}),
+              timestamp: Date.now(),
+            },
+          ]
           return {
             messages: newMessages,
             chatState: 'idle',
@@ -1833,10 +1926,10 @@ function updateOptimisticSessionTitle(sessionId: string, content: string): void 
   useTabStore.getState().updateTabTitle(sessionId, title)
 }
 
-// ─── History mapping helpers (unchanged from original) ─────────
+// ─── History mapping helpers ─────────
 
 type AssistantHistoryBlock = { type: string; text?: string; thinking?: string; name?: string; id?: string; input?: unknown }
-type UserHistoryBlock = { type: string; text?: string; tool_use_id?: string; content?: unknown; is_error?: boolean; source?: { data?: string }; mimeType?: string; media_type?: string; name?: string }
+type UserHistoryBlock = { type: string; text?: string; tool_use_id?: string; content?: unknown; is_error?: boolean; source?: { data?: string; media_type?: string }; mimeType?: string; media_type?: string; name?: string }
 
 const TASK_NOTIFICATION_RE = /^<task-notification>\s*[\s\S]*<\/task-notification>$/i
 const GOAL_EVENT_ACTIONS = new Set<GoalEventAction>([
@@ -1857,6 +1950,60 @@ const GOAL_EVENT_ACTIONS = new Set<GoalEventAction>([
  */
 function isTeammateMessage(text: string): boolean {
   return text.includes('<teammate-message') && text.includes('</teammate-message>')
+}
+
+const SIMPLE_IMAGE_SOURCE_RE = /^\[Image source: (.+)\]$/
+const DETAILED_IMAGE_SOURCE_RE = /^\[Image: source: (.+?)(?:, original \d+x\d+, displayed at \d+x\d+\. Multiply coordinates by \d+(?:\.\d+)? to map to original image\.)?\]$/
+const IMAGE_RESIZE_METADATA_RE = /^\[Image: original \d+x\d+, displayed at \d+x\d+\. Multiply coordinates by \d+(?:\.\d+)? to map to original image\.\]$/
+
+function getHistoryImageMediaType(block: UserHistoryBlock): string {
+  const mediaType = block.source?.media_type ?? block.mimeType ?? block.media_type
+  return mediaType?.startsWith('image/') ? mediaType : 'image/png'
+}
+
+function normalizeHistoryImageData(data: string | undefined, mediaType: string): string | undefined {
+  const trimmed = data?.trim()
+  if (!trimmed) return undefined
+  if (/^data:image\//i.test(trimmed)) return trimmed
+  return `data:${mediaType};base64,${trimmed}`
+}
+
+function extractImageMetadataSourcePath(text: string): string | undefined {
+  const trimmed = text.trim()
+  const simpleMatch = trimmed.match(SIMPLE_IMAGE_SOURCE_RE)
+  if (simpleMatch?.[1]) return simpleMatch[1]
+  const detailedMatch = trimmed.match(DETAILED_IMAGE_SOURCE_RE)
+  if (detailedMatch?.[1]) return detailedMatch[1]
+  return undefined
+}
+
+function isGeneratedImageMetadataText(text: string): boolean {
+  return Boolean(extractImageMetadataSourcePath(text)) || IMAGE_RESIZE_METADATA_RE.test(text.trim())
+}
+
+function normalizeHistoryImageAttachment(block: UserHistoryBlock): UIAttachment {
+  const mediaType = getHistoryImageMediaType(block)
+  return {
+    type: 'image',
+    name: block.name || 'image',
+    data: normalizeHistoryImageData(block.source?.data, mediaType),
+    mimeType: mediaType,
+  }
+}
+
+function applyImageMetadataSourcePaths(attachments: UIAttachment[], sourcePaths: string[]): void {
+  let imageIndex = 0
+  for (const sourcePath of sourcePaths) {
+    const attachment = attachments
+      .slice(imageIndex)
+      .find((candidate) => candidate.type === 'image')
+    if (!attachment) return
+    imageIndex = attachments.indexOf(attachment) + 1
+    attachment.path = sourcePath
+    if (!attachment.name || attachment.name === 'image') {
+      attachment.name = getReferenceName(sourcePath)
+    }
+  }
 }
 
 function extractHistoryTextBlocks(content: unknown): string[] {
@@ -2562,16 +2709,27 @@ export function mapHistoryMessagesToUiMessages(
       continue
     }
     if ((msg.type === 'user' || msg.type === 'tool_result') && Array.isArray(msg.content)) {
-      const textParts: string[] = []
+      const visibleTextParts: string[] = []
+      const modelTextParts: string[] = []
       const attachments: UIAttachment[] = []
+      const imageSourcePaths: string[] = []
+      const hasImageBlock = (msg.content as UserHistoryBlock[]).some((block) => block.type === 'image')
       for (const block of msg.content as UserHistoryBlock[]) {
         if (block.type === 'text' && block.text && isTeammateMessage(block.text)) {
+          modelTextParts.push(block.text)
           if (!includeTeammateMessages) continue
-          textParts.push(...extractVisibleTeammateMessageContents(block.text))
+          visibleTextParts.push(...extractVisibleTeammateMessageContents(block.text))
         } else if (block.type === 'text' && block.text) {
-          textParts.push(block.text)
+          modelTextParts.push(block.text)
+          const imageSourcePath = hasImageBlock ? extractImageMetadataSourcePath(block.text) : undefined
+          if (imageSourcePath) {
+            imageSourcePaths.push(imageSourcePath)
+          }
+          if (!hasImageBlock || !isGeneratedImageMetadataText(block.text)) {
+            visibleTextParts.push(block.text)
+          }
         }
-        else if (block.type === 'image') attachments.push({ type: 'image', name: block.name || 'image', data: block.source?.data, mimeType: block.mimeType || block.media_type })
+        else if (block.type === 'image') attachments.push(normalizeHistoryImageAttachment(block))
         else if (block.type === 'file') attachments.push({ type: 'file', name: block.name || 'file' })
         else if (block.type === 'tool_result') uiMessages.push({
           id: nextId(),
@@ -2583,15 +2741,19 @@ export function mapHistoryMessagesToUiMessages(
           parentToolUseId: msg.parentToolUseId,
         })
       }
-      if (textParts.length > 0 || attachments.length > 0) {
-        const parsed = extractLeadingFileReferences(textParts.join('\n'))
+      applyImageMetadataSourcePaths(attachments, imageSourcePaths)
+      if (visibleTextParts.length > 0 || attachments.length > 0) {
+        const visibleText = visibleTextParts.join('\n')
+        const modelText = modelTextParts.join('\n')
+        const parsed = extractLeadingFileReferences(visibleText)
+        const modelContent = modelText !== visibleText ? modelText : parsed.modelContent
         const allAttachments = [...(parsed.attachments ?? []), ...attachments]
         uiMessages.push({
           id: msg.id || nextId(),
           type: 'user_text',
           content: parsed.content,
           ...(msg.id ? { transcriptMessageId: msg.id } : {}),
-          ...(parsed.modelContent ? { modelContent: parsed.modelContent } : {}),
+          ...(modelContent ? { modelContent } : {}),
           attachments: allAttachments.length > 0 ? allAttachments : undefined,
           timestamp,
         })

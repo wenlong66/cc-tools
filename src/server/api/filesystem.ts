@@ -52,7 +52,7 @@ function isVcsMetadataDirectoryName(name: string): boolean {
   return VCS_METADATA_DIRECTORY_NAMES.has(name.toLowerCase())
 }
 
-function isAllowedFilesystemPath(targetPath: string): boolean {
+export function isAllowedFilesystemPath(targetPath: string): boolean {
   const resolvedPath = path.resolve(normalizeDriveRootPathForPlatform(targetPath))
   const homeDir = path.resolve(os.homedir())
 

@@ -15,6 +15,10 @@ import { handleProxyRequest } from './proxy/handler.js'
 import { ProviderService } from './services/providerService.js'
 import { handleHahaOAuthCallback } from './api/haha-oauth.js'
 import { handleHahaOpenAIOAuthCallback } from './api/haha-openai-oauth.js'
+import { handlePreviewFs } from './api/previewFs.js'
+import { handleLocalFile } from './api/localFile.js'
+import { sessionService } from './services/sessionService.js'
+import { conversationService } from './services/conversationService.js'
 import { OPENAI_CODEX_REDIRECT_PATH } from '../services/openaiAuth/client.js'
 import { ensureDesktopCliLauncherInstalled } from './services/desktopCliLauncherService.js'
 import { enableConfigs } from '../utils/config.js'
@@ -121,9 +125,14 @@ function originFromUrl(value: string | null): string | null {
 
 export function startServer(port = PORT, host = HOST) {
   enableConfigs()
-  diagnosticsService.installConsoleCapture()
-  diagnosticsService.installProcessCapture()
-  ProviderService.setServerPort(port)
+  // Don't hijack the global console / process handlers under `bun test`:
+  // a test that boots the server would otherwise route every test-side
+  // console.error/warn into the user's real diagnostics file.
+  if (process.env.NODE_ENV !== 'test') {
+    diagnosticsService.installConsoleCapture()
+    diagnosticsService.installProcessCapture()
+  }
+  let serverPort = port
   const localConnectHost =
     host === '0.0.0.0' || host === '127.0.0.1' || host === 'localhost'
       ? '127.0.0.1'
@@ -221,7 +230,7 @@ export function startServer(port = PORT, host = HOST) {
               connectedAt: Date.now(),
               channel: 'client',
               sdkToken: null,
-              serverPort: port,
+              serverPort,
               serverHost: localConnectHost,
             },
           })
@@ -256,7 +265,7 @@ export function startServer(port = PORT, host = HOST) {
               connectedAt: Date.now(),
               channel: 'sdk',
               sdkToken: url.searchParams.get('token'),
-              serverPort: port,
+              serverPort,
               serverHost: localConnectHost,
             },
           })
@@ -273,6 +282,59 @@ export function startServer(port = PORT, host = HOST) {
           url.pathname === '/callback/openai'
         ) {
           return handleHahaOpenAIOAuthCallback(url)
+        }
+
+        // Preview filesystem — serve sandboxed workspace files for a session.
+        if (url.pathname.startsWith('/preview-fs/')) {
+          if (cors.rejected) {
+            return corsRejectedResponse(cors)
+          }
+
+          if (authRequired) {
+            const authError = await requireH5Token(req)
+            if (authError) {
+              return withCors(authError, cors)
+            }
+          } else if (forceAuth) {
+            const authError = await requireAuth(req)
+            if (authError) {
+              return withCors(authError, cors)
+            }
+          }
+
+          const response = await handlePreviewFs(
+            url,
+            async (sessionId) =>
+              conversationService.getSessionWorkDir(sessionId) ||
+              (await sessionService.getSessionWorkDir(sessionId)) ||
+              null,
+            req.headers,
+          )
+          return withCors(response, cors)
+        }
+
+        // Local filesystem — serve an ABSOLUTE local file ($HOME/tmp/registered
+        // roots sandbox) so `file://` links / AI-emitted absolute paths open in
+        // the in-app browser. Gated identically to /preview-fs above.
+        if (url.pathname.startsWith('/local-file/')) {
+          if (cors.rejected) {
+            return corsRejectedResponse(cors)
+          }
+
+          if (authRequired) {
+            const authError = await requireH5Token(req)
+            if (authError) {
+              return withCors(authError, cors)
+            }
+          } else if (forceAuth) {
+            const authError = await requireAuth(req)
+            if (authError) {
+              return withCors(authError, cors)
+            }
+          }
+
+          const response = await handleLocalFile(url, req.headers)
+          return withCors(response, cors)
         }
 
         // REST API
@@ -371,6 +433,8 @@ export function startServer(port = PORT, host = HOST) {
 
       websocket: handleWebSocket,
     })
+    serverPort = server.port
+    ProviderService.setServerPort(serverPort)
   } catch (error) {
     const message = error instanceof Error && error.message
       ? error.message
@@ -391,33 +455,52 @@ export function startServer(port = PORT, host = HOST) {
     )
   })
 
-  console.log(`[Server] Claude Code API server running at http://${host}:${port}`)
+  console.log(`[Server] Claude Code API server running at http://${host}:${serverPort}`)
   return server
 }
 
 // ─── Graceful shutdown: kill all CLI subprocesses on exit ────────────────────
-import { conversationService } from './services/conversationService.js'
+
+let shutdownInProgress: Promise<void> | null = null
 
 function cleanupAllSessions() {
   const active = conversationService.getActiveSessions()
   if (active.length > 0) {
     console.log(`[Server] Shutting down — killing ${active.length} CLI subprocess(es)`)
-    for (const sessionId of active) {
-        conversationService.stopSession(sessionId)
-    }
+    conversationService.stopAllSessions()
   }
 }
 
+async function cleanupAllSessionsAndWait() {
+  const active = conversationService.getActiveSessions()
+  if (active.length > 0) {
+    console.log(`[Server] Shutting down — killing ${active.length} CLI subprocess(es)`)
+    await conversationService.stopAllSessionsAndWait()
+  }
+}
+
+function shutdownAndExit(signal: 'SIGTERM' | 'SIGINT', exitCode: number) {
+  if (shutdownInProgress) return
+
+  shutdownInProgress = (async () => {
+    console.log(`[Server] Received ${signal}`)
+    await cleanupAllSessionsAndWait()
+    process.exit(exitCode)
+  })().catch((error) => {
+    console.error(
+      `[Server] ${signal} shutdown cleanup failed:`,
+      error instanceof Error ? error.message : error,
+    )
+    process.exit(1)
+  })
+}
+
 process.on('SIGTERM', () => {
-  console.log('[Server] Received SIGTERM')
-  cleanupAllSessions()
-  process.exit(0)
+  shutdownAndExit('SIGTERM', 0)
 })
 
 process.on('SIGINT', () => {
-  console.log('[Server] Received SIGINT')
-  cleanupAllSessions()
-  process.exit(0)
+  shutdownAndExit('SIGINT', 0)
 })
 
 process.on('exit', () => {

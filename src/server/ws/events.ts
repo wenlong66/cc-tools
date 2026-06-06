@@ -24,7 +24,7 @@ export type ClientMessage =
       response: ComputerUsePermissionResponse
     }
   | { type: 'set_permission_mode'; mode: string }
-  | { type: 'set_runtime_config'; providerId: string | null; modelId: string }
+  | { type: 'set_runtime_config'; providerId: string | null; modelId: string; effortLevel?: string }
   | { type: 'stop_generation' }
   | { type: 'ping' }
 
@@ -63,6 +63,10 @@ export type ServerMessage =
   | { type: 'message_complete'; usage: TokenUsage }
   | { type: 'thinking'; text: string }
   | { type: 'status'; state: ChatState; verb?: string; elapsed?: number; tokens?: number }
+  // CLI 是权限模式的唯一真相来源。当 CLI 内部 mode 变化（如 ExitPlanMode 后
+  // 恢复到进入 plan 前的模式、Shift+Tab 切换）时，把新模式回传给前端，让桌面端
+  // 选择器与 CLI 保持同步，而不是停留在本地影子值上。
+  | { type: 'permission_mode_changed'; mode: string }
   | {
       type: 'api_retry'
       attempt: number
@@ -72,7 +76,7 @@ export type ServerMessage =
       errorType?: string
       errorMessage?: string
     }
-  | { type: 'error'; message: string; code: string; retryable?: boolean }
+  | { type: 'error'; message: string; code: string; retryable?: boolean; businessErrorCode?: string }
   | { type: 'system_notification'; subtype: string; message?: string; data?: unknown }
   | { type: 'pong' }
   | { type: 'team_update'; teamName: string; members: TeamMemberStatus[] }
