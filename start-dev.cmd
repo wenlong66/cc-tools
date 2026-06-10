@@ -9,7 +9,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-bun run dev:launcher %*
+if "%~1"=="" (
+  bun run dev:launcher desktop
+) else (
+  bun run dev:launcher %*
+)
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" pause
 exit /b %EXIT_CODE%
