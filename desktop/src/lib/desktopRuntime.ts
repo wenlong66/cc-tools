@@ -138,7 +138,7 @@ async function initializeBrowserServerUrl(fallbackUrl: string) {
   const queryToken = normalizeToken(query?.get('h5Token') ?? query?.get('token'))
   const stored = readStoredH5Connection()
   const configuredUrl = getConfiguredBrowserServerUrl(fallbackUrl)
-  const requestedUrl =
+  let requestedUrl =
     normalizeServerUrl(queryUrl) ??
     configuredUrl ??
     stored.serverUrl ??
@@ -159,7 +159,14 @@ async function initializeBrowserServerUrl(fallbackUrl: string) {
       clearStoredH5Token()
       throw normalizeBrowserH5Error(error, requestedUrl)
     }
-    throw error
+
+    if (shouldRetryBrowserHealthcheckWithFallback(error, requestedUrl, fallbackUrl)) {
+      requestedUrl = fallbackUrl
+      setBaseUrl(requestedUrl)
+      await waitForHealth(requestedUrl)
+    } else {
+      throw error
+    }
   }
 
   if (!browserH5Runtime) {
@@ -205,7 +212,7 @@ async function waitForHealth(serverUrl: string) {
       if (response.ok) {
         const contentType = response.headers.get('content-type') ?? ''
         if (!contentType.toLowerCase().includes('application/json')) {
-          lastError = new Error(`healthcheck returned non-JSON response from ${serverUrl}/health`)
+          throw new Error(`Server healthcheck failed: healthcheck returned non-JSON response from ${serverUrl}/health`)
         } else {
           const body = await response.json().catch(() => null)
           if (body && typeof body === 'object' && 'status' in body && body.status === 'ok') {
@@ -217,6 +224,12 @@ async function waitForHealth(serverUrl: string) {
         lastError = new Error(`healthcheck returned ${response.status}`)
       }
     } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('healthcheck returned non-JSON response')
+      ) {
+        throw error
+      }
       lastError = error
     }
 
@@ -281,6 +294,22 @@ function getConfiguredBrowserServerUrl(fallbackUrl: string) {
   }
 
   return getSameOriginServerUrl()
+}
+
+function shouldRetryBrowserHealthcheckWithFallback(
+  error: unknown,
+  requestedUrl: string,
+  fallbackUrl: string,
+) {
+  if (requestedUrl === fallbackUrl) {
+    return false
+  }
+
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return error.message.includes('healthcheck returned non-JSON response')
 }
 
 export function isLoopbackHostname(hostname: string) {
