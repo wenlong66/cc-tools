@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
+import { skillsApi } from '../api/skills'
 import { Settings } from '../pages/Settings'
 import { useSkillStore } from '../stores/skillStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -12,6 +13,15 @@ import { useUIStore } from '../stores/uiStore'
 vi.mock('../api/agents', () => ({
   agentsApi: {
     list: vi.fn().mockResolvedValue({ activeAgents: [], allAgents: [] }),
+  },
+}))
+
+vi.mock('../api/skills', () => ({
+  skillsApi: {
+    install: vi.fn(),
+    listCachedGitRepos: vi.fn(),
+    addCachedGitRepo: vi.fn(),
+    remove: vi.fn(),
   },
 }))
 
@@ -57,6 +67,10 @@ vi.mock('../components/chat/CodeViewer', () => ({
 const MOCK_FETCH_SKILLS = vi.fn()
 const MOCK_FETCH_SKILL_DETAIL = vi.fn()
 const MOCK_CLEAR_SELECTION = vi.fn()
+const MOCK_INSTALL_SKILL = vi.mocked(skillsApi.install)
+const MOCK_LIST_CACHED_GIT_REPOS = vi.mocked(skillsApi.listCachedGitRepos)
+const MOCK_ADD_CACHED_GIT_REPO = vi.mocked(skillsApi.addCachedGitRepo)
+const MOCK_REMOVE_SKILL = vi.mocked(skillsApi.remove)
 
 function switchToSkillsTab() {
   fireEvent.click(screen.getByText('Skills'))
@@ -65,6 +79,64 @@ function switchToSkillsTab() {
 describe('Settings > Skills tab', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    MOCK_FETCH_SKILLS.mockResolvedValue(undefined)
+    MOCK_FETCH_SKILL_DETAIL.mockResolvedValue(undefined)
+    MOCK_INSTALL_SKILL.mockResolvedValue({
+      ok: true,
+      message: 'Installed alpha to project skills',
+      skill: {
+        name: 'alpha',
+        description: 'Installed skill',
+        source: 'project',
+        userInvocable: true,
+        contentLength: 120,
+        hasDirectory: true,
+      },
+    })
+    MOCK_LIST_CACHED_GIT_REPOS.mockResolvedValue({
+      records: [
+        {
+          id: 'repo-1',
+          repoUrl: 'https://github.com/example/skills.git',
+          ref: 'main',
+          cacheDir: '/cache/repo-1',
+          addedAt: '2026-06-11T00:00:00.000Z',
+          skills: [
+            {
+              name: 'release-helper',
+              description: 'Release helper skill',
+              skillPath: 'skills/release-helper',
+              installedInUser: false,
+              installedInProject: false,
+            },
+          ],
+        },
+      ],
+    })
+    MOCK_ADD_CACHED_GIT_REPO.mockResolvedValue({
+      ok: true,
+      message: 'Cached https://github.com/example/skills.git',
+      record: {
+        id: 'repo-1',
+        repoUrl: 'https://github.com/example/skills.git',
+        ref: 'main',
+        cacheDir: '/cache/repo-1',
+        addedAt: '2026-06-11T00:00:00.000Z',
+        skills: [
+          {
+            name: 'release-helper',
+            description: 'Release helper skill',
+            skillPath: 'skills/release-helper',
+            installedInUser: false,
+            installedInProject: false,
+          },
+        ],
+      },
+    })
+    MOCK_REMOVE_SKILL.mockResolvedValue({
+      ok: true,
+      message: 'Deleted alpha from user skills',
+    })
     useSettingsStore.setState({ locale: 'en' })
     useSessionStore.setState({
       sessions: [
@@ -259,6 +331,108 @@ describe('Settings > Skills tab', () => {
     expect(screen.getByText('Read, Edit')).toBeInTheDocument()
     expect(screen.getByText('Hello')).toBeInTheDocument()
     expect(screen.queryByText(/^---$/)).not.toBeInTheDocument()
+  })
+
+  it('installs a local skill into the selected scope from the skills manager modal', async () => {
+    render(<Settings />)
+    switchToSkillsTab()
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Add skill'))
+      await Promise.resolve()
+    })
+
+    fireEvent.change(screen.getByLabelText('Skill directory'), {
+      target: { value: '/imports/alpha-skill' },
+    })
+    fireEvent.click(screen.getByText('Install into the current project: /workspace/project'))
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Install skill'))
+      await Promise.resolve()
+    })
+
+    expect(MOCK_INSTALL_SKILL).toHaveBeenCalledWith({
+      mode: 'directory',
+      path: '/imports/alpha-skill',
+      scope: 'project',
+      cwd: '/workspace/project',
+    })
+    expect(MOCK_FETCH_SKILLS).toHaveBeenLastCalledWith('/workspace/project')
+  })
+
+  it('caches a git repository and installs a selected cached skill', async () => {
+    render(<Settings />)
+    switchToSkillsTab()
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Add skill'))
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByText('Git repository'))
+    fireEvent.change(screen.getByLabelText('Repository URL'), {
+      target: { value: 'https://github.com/example/skills.git' },
+    })
+    fireEvent.change(screen.getByLabelText('Ref (optional)'), {
+      target: { value: 'main' },
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Add to cache'))
+      await Promise.resolve()
+    })
+
+    expect(MOCK_ADD_CACHED_GIT_REPO).toHaveBeenCalledWith({
+      repoUrl: 'https://github.com/example/skills.git',
+      ref: 'main',
+      cwd: '/workspace/project',
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Add to global'))
+      await Promise.resolve()
+    })
+
+    expect(MOCK_INSTALL_SKILL).toHaveBeenCalledWith({
+      mode: 'git',
+      repoUrl: 'https://github.com/example/skills.git',
+      ref: 'main',
+      skillPath: 'skills/release-helper',
+      scope: 'user',
+      cwd: '/workspace/project',
+    })
+  })
+
+  it('deletes a managed user skill from the list', async () => {
+    useSkillStore.setState({
+      skills: [
+        {
+          name: 'alpha',
+          displayName: 'Alpha Skill',
+          description: 'First skill description',
+          source: 'user',
+          userInvocable: true,
+          contentLength: 400,
+          hasDirectory: true,
+          canDelete: true,
+        },
+      ],
+    })
+
+    render(<Settings />)
+    switchToSkillsTab()
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Delete'))
+      await Promise.resolve()
+    })
+
+    expect(MOCK_REMOVE_SKILL).toHaveBeenCalledWith(
+      'user',
+      'alpha',
+      '/workspace/project',
+    )
   })
 
   it('returns to plugins tab when skill detail was opened from plugins', async () => {

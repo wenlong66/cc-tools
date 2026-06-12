@@ -10,6 +10,7 @@ export type SkillMeta = {
   contentLength: number
   hasDirectory: boolean
   pluginName?: string
+  canDelete?: boolean
 }
 
 export type FileTreeNode = {

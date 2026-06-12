@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -35,10 +36,79 @@ function makePluginReloadRequest(): { req: Request; url: URL; segments: string[]
   }
 }
 
+type SkillInstallRequestBody =
+  | {
+      mode?: 'directory'
+      path: string
+      scope: 'user' | 'project'
+      cwd?: string
+    }
+  | {
+      mode: 'git'
+      repoUrl: string
+      ref?: string
+      skillPath?: string
+      scope: 'user' | 'project'
+      cwd?: string
+    }
+
+function makeSkillInstallRequest(body: SkillInstallRequestBody): {
+  req: Request
+  url: URL
+  segments: string[]
+} {
+  const url = new URL('/api/skills/install', 'http://localhost:3456')
+  const req = new Request(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return {
+    req,
+    url,
+    segments: url.pathname.split('/').filter(Boolean),
+  }
+}
+
+function makeSkillDeleteRequest(query: {
+  source: 'user' | 'project'
+  name: string
+  cwd?: string
+}): { req: Request; url: URL; segments: string[] } {
+  const url = new URL('/api/skills', 'http://localhost:3456')
+  url.searchParams.set('source', query.source)
+  url.searchParams.set('name', query.name)
+  if (query.cwd) {
+    url.searchParams.set('cwd', query.cwd)
+  }
+  const req = new Request(url.toString(), { method: 'DELETE' })
+  return {
+    req,
+    url,
+    segments: url.pathname.split('/').filter(Boolean),
+  }
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+  })
+}
+
 async function writeSkill(root: string, skillName: string, content: string): Promise<void> {
   const skillDir = path.join(root, skillName)
   await fs.mkdir(skillDir, { recursive: true })
   await fs.writeFile(path.join(skillDir, 'SKILL.md'), content, 'utf-8')
+}
+
+async function createSkillRepo(baseDir: string, repoName: string): Promise<string> {
+  const repoDir = path.join(baseDir, repoName)
+  await fs.mkdir(repoDir, { recursive: true })
+  git(repoDir, 'init')
+  git(repoDir, 'config', 'user.email', 'skills@example.com')
+  git(repoDir, 'config', 'user.name', 'Skills Test')
+  return repoDir
 }
 
 describe('Skills API', () => {
@@ -167,6 +237,253 @@ describe('Skills API', () => {
     expect(body.detail.files).toContainEqual(
       expect.objectContaining({ path: 'SKILL.md', body: 'child body' }),
     )
+  })
+
+  it('installs an existing skill directory into user scope', async () => {
+    const importRoot = path.join(tmpHome, 'imports')
+    const projectRoot = path.join(tmpHome, 'workspace')
+    const cwd = path.join(projectRoot, 'packages', 'app')
+
+    await writeSkill(
+      importRoot,
+      'alpha-skill',
+      ['---', 'description: Imported into user scope', '---', '', '# Alpha'].join('\n'),
+    )
+
+    const install = makeSkillInstallRequest({
+      path: path.join(importRoot, 'alpha-skill'),
+      scope: 'user',
+      cwd,
+    })
+    const installRes = await handleSkillsApi(install.req, install.url, install.segments)
+
+    expect(installRes.status).toBe(200)
+    const installedDir = path.join(tmpHome, '.cc-tools', 'skills', 'alpha-skill')
+    const installedStat = await fs.lstat(installedDir)
+    expect(installedStat.isSymbolicLink()).toBe(true)
+
+    const after = makeRequest(`/api/skills?cwd=${encodeURIComponent(cwd)}`)
+    const afterRes = await handleSkillsApi(after.req, after.url, after.segments)
+    const afterBody = await afterRes.json() as {
+      skills: Array<{ name: string; source: string; description: string }>
+    }
+
+    expect(afterBody.skills).toContainEqual(
+      expect.objectContaining({
+        name: 'alpha-skill',
+        source: 'user',
+        description: 'Imported into user scope',
+      }),
+    )
+  })
+
+  it('installs an existing skill directory into the project root for the requested cwd', async () => {
+    const importRoot = path.join(tmpHome, 'imports')
+    const projectRoot = path.join(tmpHome, 'workspace')
+    const cwd = path.join(projectRoot, 'packages', 'app')
+
+    await fs.mkdir(path.join(projectRoot, '.git'), { recursive: true })
+    await fs.mkdir(cwd, { recursive: true })
+    await writeSkill(
+      importRoot,
+      'project-only-skill',
+      ['---', 'description: Imported into project scope', '---', '', '# Project only'].join('\n'),
+    )
+
+    const install = makeSkillInstallRequest({
+      path: path.join(importRoot, 'project-only-skill'),
+      scope: 'project',
+      cwd,
+    })
+    const installRes = await handleSkillsApi(install.req, install.url, install.segments)
+
+    expect(installRes.status).toBe(200)
+    const installedDir = path.join(
+      projectRoot,
+      '.cc-tools',
+      'skills',
+      'project-only-skill',
+    )
+    const installedStat = await fs.lstat(installedDir)
+    expect(installedStat.isSymbolicLink()).toBe(true)
+
+    const after = makeRequest(`/api/skills?cwd=${encodeURIComponent(cwd)}`)
+    const afterRes = await handleSkillsApi(after.req, after.url, after.segments)
+    const afterBody = await afterRes.json() as {
+      skills: Array<{ name: string; source: string; description: string }>
+    }
+
+    expect(afterBody.skills).toContainEqual(
+      expect.objectContaining({
+        name: 'project-only-skill',
+        source: 'project',
+        description: 'Imported into project scope',
+      }),
+    )
+  })
+
+  it('caches a git repo and lists its installable skills', async () => {
+    const reposRoot = path.join(tmpHome, 'repos')
+    const cwd = path.join(tmpHome, 'workspace')
+    const repoDir = await createSkillRepo(reposRoot, 'git-root-skill')
+
+    await fs.writeFile(
+      path.join(repoDir, 'SKILL.md'),
+      ['---', 'description: Git root skill', '---', '', '# Git root'].join('\n'),
+      'utf-8',
+    )
+    git(repoDir, 'add', 'SKILL.md')
+    git(repoDir, 'commit', '-m', 'root skill')
+
+    const cacheUrl = new URL('/api/skills/git-cache', 'http://localhost:3456')
+    const cacheReq = new Request(cacheUrl.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoUrl: repoDir, cwd }),
+    })
+    const cacheRes = await handleSkillsApi(
+      cacheReq,
+      cacheUrl,
+      cacheUrl.pathname.split('/').filter(Boolean),
+    )
+    expect(cacheRes.status).toBe(200)
+
+    const list = makeRequest(`/api/skills/git-cache?cwd=${encodeURIComponent(cwd)}`)
+    const listRes = await handleSkillsApi(list.req, list.url, list.segments)
+    expect(listRes.status).toBe(200)
+    const listBody = await listRes.json() as {
+      records: Array<{ repoUrl: string; skills: Array<{ name: string; description: string }> }>
+    }
+    expect(listBody.records).toContainEqual(
+      expect.objectContaining({
+        repoUrl: repoDir,
+        skills: expect.arrayContaining([
+          expect.objectContaining({
+            name: 'git-root-skill',
+            description: 'Git root skill',
+          }),
+        ]),
+      }),
+    )
+  })
+
+  it('clones a git skill repo into cache and installs the root skill into user scope', async () => {
+    const reposRoot = path.join(tmpHome, 'repos')
+    const projectRoot = path.join(tmpHome, 'workspace')
+    const cwd = path.join(projectRoot, 'packages', 'app')
+    const repoDir = await createSkillRepo(reposRoot, 'git-root-skill')
+
+    await fs.writeFile(
+      path.join(repoDir, 'SKILL.md'),
+      ['---', 'description: Git root skill', '---', '', '# Git root'].join('\n'),
+      'utf-8',
+    )
+    git(repoDir, 'add', 'SKILL.md')
+    git(repoDir, 'commit', '-m', 'root skill')
+
+    const install = makeSkillInstallRequest({
+      mode: 'git',
+      repoUrl: repoDir,
+      scope: 'user',
+      cwd,
+    })
+    const installRes = await handleSkillsApi(install.req, install.url, install.segments)
+
+    expect(installRes.status).toBe(200)
+    const installBody = await installRes.json() as {
+      ok: true
+      skill: { name: string }
+    }
+    expect(installBody.skill.name).toBe('git-root-skill')
+
+    const cachedReposDir = path.join(tmpHome, '.cc-tools', 'cache', 'skills', 'repos')
+    const cachedEntries = await fs.readdir(cachedReposDir)
+    expect(cachedEntries.length).toBeGreaterThan(0)
+
+    const installedDir = path.join(tmpHome, '.cc-tools', 'skills', 'git-root-skill')
+    const installedStat = await fs.lstat(installedDir)
+    expect(installedStat.isSymbolicLink()).toBe(true)
+  })
+
+  it('clones a git repo and installs a nested skill path into project scope', async () => {
+    const reposRoot = path.join(tmpHome, 'repos')
+    const projectRoot = path.join(tmpHome, 'workspace')
+    const cwd = path.join(projectRoot, 'packages', 'app')
+    const repoDir = await createSkillRepo(reposRoot, 'git-nested-skills')
+
+    await fs.mkdir(path.join(projectRoot, '.git'), { recursive: true })
+    await fs.mkdir(cwd, { recursive: true })
+    await fs.mkdir(path.join(repoDir, 'skills', 'release-helper'), { recursive: true })
+    await fs.writeFile(
+      path.join(repoDir, 'skills', 'release-helper', 'SKILL.md'),
+      ['---', 'description: Nested git skill', '---', '', '# Release helper'].join('\n'),
+      'utf-8',
+    )
+    git(repoDir, 'add', 'skills/release-helper/SKILL.md')
+    git(repoDir, 'commit', '-m', 'nested skill')
+
+    const install = makeSkillInstallRequest({
+      mode: 'git',
+      repoUrl: repoDir,
+      skillPath: 'skills/release-helper',
+      scope: 'project',
+      cwd,
+    })
+    const installRes = await handleSkillsApi(install.req, install.url, install.segments)
+
+    expect(installRes.status).toBe(200)
+    const installedDir = path.join(
+      projectRoot,
+      '.cc-tools',
+      'skills',
+      'release-helper',
+    )
+    const installedStat = await fs.lstat(installedDir)
+    expect(installedStat.isSymbolicLink()).toBe(true)
+
+    const after = makeRequest(`/api/skills?cwd=${encodeURIComponent(cwd)}`)
+    const afterRes = await handleSkillsApi(after.req, after.url, after.segments)
+    const afterBody = await afterRes.json() as {
+      skills: Array<{ name: string; source: string; description: string }>
+    }
+
+    expect(afterBody.skills).toContainEqual(
+      expect.objectContaining({
+        name: 'release-helper',
+        source: 'project',
+        description: 'Nested git skill',
+      }),
+    )
+  })
+
+  it('deletes a project skill from the nearest project skills directory', async () => {
+    const projectRoot = path.join(tmpHome, 'workspace')
+    const cwd = path.join(projectRoot, 'packages', 'app')
+    const projectSkillsRoot = path.join(projectRoot, '.cc-tools', 'skills')
+
+    await fs.mkdir(path.join(projectRoot, '.git'), { recursive: true })
+    await fs.mkdir(cwd, { recursive: true })
+    await writeSkill(
+      projectSkillsRoot,
+      'delete-me',
+      ['---', 'description: Delete me', '---', '', '# Delete me'].join('\n'),
+    )
+
+    const deleteRequest = makeSkillDeleteRequest({
+      source: 'project',
+      name: 'delete-me',
+      cwd,
+    })
+    const deleteRes = await handleSkillsApi(
+      deleteRequest.req,
+      deleteRequest.url,
+      deleteRequest.segments,
+    )
+    expect(deleteRes.status).toBe(200)
+
+    await expect(
+      fs.lstat(path.join(projectSkillsRoot, 'delete-me')),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('lists plugin skills after reload rereads an external enable toggle', async () => {
