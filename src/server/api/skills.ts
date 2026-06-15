@@ -234,9 +234,14 @@ async function upsertCachedGitRepoIndexEntry(
   return nextEntry
 }
 
-async function ensureCachedGitRepo(repoUrl: string, ref?: string): Promise<string> {
+async function ensureCachedGitRepo(
+  repoUrl: string,
+  ref?: string,
+  options?: { refreshIfExists?: boolean },
+): Promise<string> {
   const cacheDir = getCachedRepoDirectory(repoUrl, ref)
   const gitDir = path.join(cacheDir, '.git')
+  const shouldRefreshExistingClone = options?.refreshIfExists ?? true
 
   let hasExistingClone = false
   try {
@@ -263,13 +268,13 @@ async function ensureCachedGitRepo(repoUrl: string, ref?: string): Promise<strin
         'unknown git clone error'
       throw ApiError.badRequest(`Failed to clone skill repository: ${details.trim()}`)
     }
-  } else {
+  } else if (shouldRefreshExistingClone) {
     await runGitCommand(cacheDir, ['fetch', '--all', '--tags', '--prune'], 'Failed to refresh skill repository cache')
   }
 
   if (ref) {
     await runGitCommand(cacheDir, ['checkout', ref], `Failed to checkout ref "${ref}"`)
-  } else if (hasExistingClone) {
+  } else if (hasExistingClone && shouldRefreshExistingClone) {
     const pullResult = await execFileNoThrowWithCwd(gitExe(), ['pull', '--ff-only'], {
       cwd: cacheDir,
       timeout: GIT_OPERATION_TIMEOUT_MS,
@@ -291,8 +296,11 @@ async function resolveGitSkillDirectory(
   repoUrl: string,
   ref?: string,
   skillPath?: string,
+  refreshIfCacheExists: boolean = true,
 ): Promise<{ skillDir: string; skillName: string }> {
-  const cacheDir = await ensureCachedGitRepo(repoUrl, ref)
+  const cacheDir = await ensureCachedGitRepo(repoUrl, ref, {
+    refreshIfExists: refreshIfCacheExists,
+  })
   const repoName = path
     .basename(repoUrl.replace(/[\\/]+$/, ''))
     .replace(/\.git$/i, '')
@@ -955,6 +963,7 @@ async function installSkill(req: Request, url: URL): Promise<Response> {
       repoUrl,
       asString(body.ref),
       asString(body.skillPath),
+      false,
     )
     resolvedSourcePath = gitSkill.skillDir
     sourceSkillName = gitSkill.skillName

@@ -404,6 +404,34 @@ describe('Settings > Skills tab', () => {
     })
   })
 
+  it('refreshes a cached git repository from the repository actions', async () => {
+    render(<Settings />)
+    switchToSkillsTab()
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Add skill'))
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Git repository'))
+      await Promise.resolve()
+    })
+
+    const refreshButtons = await screen.findAllByText('Refresh')
+
+    await act(async () => {
+      fireEvent.click(refreshButtons[refreshButtons.length - 1])
+      await Promise.resolve()
+    })
+
+    expect(MOCK_ADD_CACHED_GIT_REPO).toHaveBeenCalledWith({
+      repoUrl: 'https://github.com/example/skills.git',
+      ref: 'main',
+      cwd: '/workspace/project',
+    })
+  })
+
   it('deletes a managed user skill from the list', async () => {
     useSkillStore.setState({
       skills: [

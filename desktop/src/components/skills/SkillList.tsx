@@ -67,6 +67,7 @@ export function SkillList() {
   const [installScope, setInstallScope] = useState<InstallScope>('user')
   const [isInstalling, setIsInstalling] = useState(false)
   const [isCachingGitRepo, setIsCachingGitRepo] = useState(false)
+  const [refreshingRepoId, setRefreshingRepoId] = useState<string | null>(null)
   const [isLoadingCachedGitRepos, setIsLoadingCachedGitRepos] = useState(false)
   const [cachedGitRepos, setCachedGitRepos] = useState<CachedGitRepoRecord[]>([])
   const [expandedRepoIds, setExpandedRepoIds] = useState<Record<string, boolean>>({})
@@ -257,6 +258,26 @@ export function SkillList() {
     }
   }
 
+  const handleRefreshCachedGitRepo = async (repo: CachedGitRepoRecord) => {
+    setRefreshingRepoId(repo.id)
+    try {
+      const { message } = await skillsApi.addCachedGitRepo({
+        repoUrl: repo.repoUrl,
+        ...(repo.ref ? { ref: repo.ref } : {}),
+        ...(currentWorkDir ? { cwd: currentWorkDir } : {}),
+      })
+      await loadCachedGitRepos(currentWorkDir)
+      addToast({ type: 'success', message })
+    } catch (error) {
+      addToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setRefreshingRepoId(null)
+    }
+  }
+
   const handleInstallCachedGitSkill = async (
     repo: CachedGitRepoRecord,
     skill: CachedGitSkill,
@@ -414,7 +435,7 @@ export function SkillList() {
       <Button
         variant="secondary"
         onClick={() => setIsInstallModalOpen(false)}
-        disabled={isInstalling || isCachingGitRepo}
+        disabled={isInstalling || isCachingGitRepo || refreshingRepoId !== null}
       >
         {t('settings.skills.close')}
       </Button>
@@ -676,7 +697,7 @@ export function SkillList() {
                                   </button>
                                 )}
                               </div>
-                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--color-text-tertiary)]">
+                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-[var(--color-text-tertiary)]">
                                 <span>{sourceLabel}</span>
                                 <span>
                                   {t('settings.skills.tokenEstimateShort', {
@@ -688,21 +709,21 @@ export function SkillList() {
                                     ? t('settings.skills.ready')
                                     : t('settings.skills.unavailable')}
                                 </span>
-                              </div>
-                              {skill.canDelete && (
-                                <div
-                                  className="mt-3 flex flex-wrap gap-2"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  <Button
-                                    variant="danger"
-                                    size="sm"
-                                    onClick={() => void handleDeleteSkill(skill)}
+                                {skill.canDelete && (
+                                  <span
+                                    className="sm:ml-auto"
+                                    onClick={(event) => event.stopPropagation()}
                                   >
-                                    {t('settings.skills.delete')}
-                                  </Button>
-                                </div>
-                              )}
+                                    <Button
+                                      variant="danger"
+                                      size="sm"
+                                      onClick={() => void handleDeleteSkill(skill)}
+                                    >
+                                      {t('settings.skills.delete')}
+                                    </Button>
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <span className="material-symbols-outlined text-[18px] text-[var(--color-text-tertiary)] opacity-60 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100">
                               chevron_right
@@ -722,7 +743,7 @@ export function SkillList() {
       <Modal
         open={isInstallModalOpen}
         onClose={() => {
-          if (!isInstalling && !isCachingGitRepo) {
+          if (!isInstalling && !isCachingGitRepo && !refreshingRepoId) {
             setIsInstallModalOpen(false)
           }
         }}
@@ -932,6 +953,7 @@ export function SkillList() {
                   <div className="flex flex-col divide-y divide-[var(--color-border)]">
                     {cachedGitRepos.map((repo) => {
                       const isExpanded = expandedRepoIds[repo.id] ?? true
+                      const isRefreshingRepo = refreshingRepoId === repo.id
 
                       return (
                         <div key={repo.id} className="px-4 py-4">
@@ -958,10 +980,19 @@ export function SkillList() {
                               <Button
                                 variant="secondary"
                                 size="sm"
+                                onClick={() => void handleRefreshCachedGitRepo(repo)}
+                                loading={isRefreshingRepo}
+                                disabled={isInstalling}
+                              >
+                                {t('settings.skills.refresh')}
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
                                 onClick={() =>
                                   void handleInstallAllCachedGitSkills(repo, 'user')
                                 }
-                                disabled={repo.skills.length === 0 || isInstalling}
+                                disabled={repo.skills.length === 0 || isInstalling || isRefreshingRepo}
                               >
                                 {t('settings.skills.installAllGlobal')}
                               </Button>
@@ -971,7 +1002,7 @@ export function SkillList() {
                                 onClick={() =>
                                   void handleInstallAllCachedGitSkills(repo, 'project')
                                 }
-                                disabled={repo.skills.length === 0 || !currentWorkDir || isInstalling}
+                                disabled={repo.skills.length === 0 || !currentWorkDir || isInstalling || isRefreshingRepo}
                               >
                                 {t('settings.skills.installAllProject')}
                               </Button>
@@ -1019,7 +1050,7 @@ export function SkillList() {
                                           onClick={() =>
                                             void handleInstallCachedGitSkill(repo, skill, 'user')
                                           }
-                                          disabled={isInstalling}
+                                          disabled={isInstalling || isRefreshingRepo}
                                         >
                                           {t('settings.skills.installToGlobal')}
                                         </Button>
@@ -1029,7 +1060,7 @@ export function SkillList() {
                                           onClick={() =>
                                             void handleInstallCachedGitSkill(repo, skill, 'project')
                                           }
-                                          disabled={!currentWorkDir || isInstalling}
+                                          disabled={!currentWorkDir || isInstalling || isRefreshingRepo}
                                         >
                                           {t('settings.skills.installToProject')}
                                         </Button>

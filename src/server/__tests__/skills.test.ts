@@ -405,6 +405,55 @@ describe('Skills API', () => {
     expect(installedStat.isSymbolicLink()).toBe(true)
   })
 
+  it('installs from an existing cached git repo without refreshing it first', async () => {
+    const reposRoot = path.join(tmpHome, 'repos')
+    const projectRoot = path.join(tmpHome, 'workspace')
+    const cwd = path.join(projectRoot, 'packages', 'app')
+    const repoDir = await createSkillRepo(reposRoot, 'cached-root-skill')
+
+    await fs.writeFile(
+      path.join(repoDir, 'SKILL.md'),
+      ['---', 'description: Cached Git root skill', '---', '', '# Cached Git root'].join('\n'),
+      'utf-8',
+    )
+    git(repoDir, 'add', 'SKILL.md')
+    git(repoDir, 'commit', '-m', 'root skill')
+
+    const cacheUrl = new URL('/api/skills/git-cache', 'http://localhost:3456')
+    const cacheReq = new Request(cacheUrl.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoUrl: repoDir, cwd }),
+    })
+    const cacheRes = await handleSkillsApi(
+      cacheReq,
+      cacheUrl,
+      cacheUrl.pathname.split('/').filter(Boolean),
+    )
+    expect(cacheRes.status).toBe(200)
+
+    await fs.rm(repoDir, { recursive: true, force: true })
+
+    const install = makeSkillInstallRequest({
+      mode: 'git',
+      repoUrl: repoDir,
+      scope: 'user',
+      cwd,
+    })
+    const installRes = await handleSkillsApi(install.req, install.url, install.segments)
+
+    expect(installRes.status).toBe(200)
+    const installBody = await installRes.json() as {
+      ok: true
+      skill: { name: string }
+    }
+    expect(installBody.skill.name).toBe('cached-root-skill')
+
+    const installedDir = path.join(tmpHome, '.cc-tools', 'skills', 'cached-root-skill')
+    const installedStat = await fs.lstat(installedDir)
+    expect(installedStat.isSymbolicLink()).toBe(true)
+  })
+
   it('clones a git repo and installs a nested skill path into project scope', async () => {
     const reposRoot = path.join(tmpHome, 'repos')
     const projectRoot = path.join(tmpHome, 'workspace')
