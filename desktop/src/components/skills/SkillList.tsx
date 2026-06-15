@@ -124,12 +124,6 @@ export function SkillList() {
     [filteredSkills],
   )
 
-  const visibleGroupCount = useMemo(
-    () =>
-      SOURCE_ORDER.filter((source) => (grouped[source] ?? []).length > 0).length,
-    [grouped],
-  )
-
   function resetInstallForm() {
     setInstallMode('directory')
     setInstallPath('')
@@ -554,11 +548,7 @@ export function SkillList() {
         )}
 
         {filteredSkills.length > 0 && (
-          <div
-            className={`grid gap-4 ${
-              visibleGroupCount >= 2 ? 'xl:grid-cols-2' : ''
-            }`}
-          >
+          <div className="flex flex-col gap-4">
             {SOURCE_ORDER.map((source) => {
               const group = grouped[source]
               if (!group?.length) return null
@@ -989,7 +979,7 @@ export function SkillList() {
                           </div>
 
                           {isExpanded && (
-                            <div className="mt-4 grid gap-4 2xl:grid-cols-2">
+                            <div className="mt-4 grid gap-4">
                               {repo.skills.map((skill) => {
                                 const skillKey = `${repo.id}-${skill.skillPath ?? skill.name}`
                                 const isDescriptionExpanded = expandedSkillDescriptions[skillKey] ?? false
@@ -997,10 +987,10 @@ export function SkillList() {
                                 return (
                                   <div
                                     key={skillKey}
-                                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4"
+                                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 overflow-hidden"
                                   >
-                                    <div className="flex items-start justify-between gap-4">
-                                      <div className="min-w-0 flex-1">
+                                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                                      <div className="min-w-0">
                                         <div className="flex flex-wrap items-center gap-2">
                                           <span className="text-sm font-semibold text-[var(--color-text-primary)] break-all">
                                             {skill.displayName || skill.name}
@@ -1022,7 +1012,7 @@ export function SkillList() {
                                           )}
                                         </div>
                                       </div>
-                                      <div className="flex shrink-0 items-center gap-2">
+                                      <div className="flex shrink-0 items-center gap-2 justify-self-end self-start pl-2">
                                         <Button
                                           variant="secondary"
                                           size="sm"
@@ -1045,7 +1035,7 @@ export function SkillList() {
                                         </Button>
                                       </div>
                                     </div>
-                                    <div className="mt-2 min-w-0 text-sm leading-6 text-[var(--color-text-secondary)]">
+                                    <div className="mt-3 min-w-0 text-sm leading-6 text-[var(--color-text-secondary)]">
                                       <p
                                         className={isDescriptionExpanded
                                           ? 'break-words'
@@ -1053,18 +1043,18 @@ export function SkillList() {
                                       >
                                         {skill.description}
                                       </p>
-                                      {skill.description.length > 100 && (
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleSkillDescriptionExpanded(skillKey)}
-                                          className="mt-1 text-xs font-medium text-[var(--color-brand)] transition-colors hover:opacity-80"
-                                        >
-                                          {isDescriptionExpanded
-                                            ? t('settings.skills.collapseDescription')
-                                            : t('settings.skills.expandDescription')}
-                                        </button>
-                                      )}
                                     </div>
+                                    {skill.description.length > 100 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleSkillDescriptionExpanded(skillKey)}
+                                        className="mt-2 text-xs font-medium text-[var(--color-brand)] transition-colors hover:opacity-80"
+                                      >
+                                        {isDescriptionExpanded
+                                          ? t('settings.skills.collapseDescription')
+                                          : t('settings.skills.expandDescription')}
+                                      </button>
+                                    )}
                                   </div>
                                 )
                               })}
