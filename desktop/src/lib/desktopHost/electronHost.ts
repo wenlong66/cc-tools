@@ -91,6 +91,9 @@ export function createElectronHost(bridge: ElectronHostBridge): DesktopHost {
       open: target => invoke(ELECTRON_IPC_CHANNELS.shellOpen, target),
       openPath: path => invoke(ELECTRON_IPC_CHANNELS.shellOpenPath, path),
     },
+    trace: {
+      openWindow: sessionId => invoke(ELECTRON_IPC_CHANNELS.traceOpenWindow, sessionId),
+    },
     dialogs: {
       open: options => invoke(ELECTRON_IPC_CHANNELS.dialogOpen, options),
       save: options => invoke(ELECTRON_IPC_CHANNELS.dialogSave, options),
@@ -115,7 +118,7 @@ export function createElectronHost(bridge: ElectronHostBridge): DesktopHost {
       minimize: () => invoke(ELECTRON_IPC_CHANNELS.windowMinimize),
       toggleMaximize: () => invoke(ELECTRON_IPC_CHANNELS.windowToggleMaximize),
       close: () => invoke(ELECTRON_IPC_CHANNELS.windowClose),
-      startDragging: input => invoke(ELECTRON_IPC_CHANNELS.windowStartDragging, input),
+      startDragging: () => invoke(ELECTRON_IPC_CHANNELS.windowStartDragging),
       requestAttention: () => invoke(ELECTRON_IPC_CHANNELS.windowRequestAttention),
       focus: () => invoke(ELECTRON_IPC_CHANNELS.windowFocus),
       isMaximized: () => invoke(ELECTRON_IPC_CHANNELS.windowIsMaximized),

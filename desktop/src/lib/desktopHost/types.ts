@@ -130,11 +130,6 @@ export type PreviewHostMessage = PreviewCaptureMessage | PreviewPickerMessage
 
 export type AppModeConfig = SettingsAppModeConfig
 
-export type WindowDragMoveInput = {
-  deltaX: number
-  deltaY: number
-}
-
 export type AppModeSetInput = {
   mode: SettingsAppMode
   portableDir: string | null
@@ -168,6 +163,9 @@ export type DesktopHost = {
     open(target: string): Promise<void>
     openPath(path: string): Promise<void>
   }
+  trace?: {
+    openWindow(sessionId: string): Promise<void>
+  }
   dialogs: {
     open(options?: DialogOpenOptions): Promise<string | string[] | null>
     save(options?: DialogSaveOptions): Promise<string | null>
@@ -189,7 +187,7 @@ export type DesktopHost = {
     minimize(): Promise<void>
     toggleMaximize(): Promise<void>
     close(): Promise<void>
-    startDragging(input?: WindowDragMoveInput): Promise<void>
+    startDragging(): Promise<void>
     requestAttention(): Promise<void>
     focus(): Promise<void>
     isMaximized(): Promise<boolean>

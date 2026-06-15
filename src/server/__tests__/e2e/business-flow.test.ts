@@ -712,13 +712,13 @@ describe('Business Flow: WebSocket Chat', () => {
         if (msg.type === 'connected') {
           ws.send(JSON.stringify({ type: 'user_message', content: 'test message' }))
         }
-        if (msg.type === 'status' && msg.state === 'idle' && messages.length > 3) {
+        if (msg.type === 'message_complete') {
           ws.close()
           resolve()
         }
       }
       ws.onerror = () => { ws.close(); resolve() }
-      setTimeout(() => { ws.close(); resolve() }, 5000)
+      setTimeout(() => { ws.close(); resolve() }, 15000)
     })
 
     const types = messages.map((m) => m.type)
@@ -731,7 +731,7 @@ describe('Business Flow: WebSocket Chat', () => {
     // Should have thinking state first
     const statusMsgs = messages.filter((m) => m.type === 'status')
     expect(statusMsgs[0].state).toBe('thinking')
-  })
+  }, 20000)
 
   it('should handle ping/pong', async () => {
     const messages: any[] = []

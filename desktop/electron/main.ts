@@ -50,6 +50,7 @@ let serverRuntime: ElectronServerRuntime | null = null
 let updaterService: ElectronUpdaterService | null = null
 let terminalService: ElectronTerminalService | null = null
 let previewService: ElectronPreviewService | null = null
+const traceWindows = new Map<string, BrowserWindow>()
 let isQuitting = false
 let trayController: TrayController | null = null
 
@@ -82,6 +83,56 @@ function rendererEntry() {
     appRoot: appRoot(),
     env: process.env,
   })
+}
+
+async function loadRendererEntry(
+  window: BrowserWindow,
+  query?: Record<string, string>,
+) {
+  const entry = rendererEntry()
+  if (/^https?:\/\//.test(entry)) {
+    const url = new URL(entry)
+    for (const [key, value] of Object.entries(query ?? {})) {
+      url.searchParams.set(key, value)
+    }
+    await window.loadURL(url.toString())
+  } else {
+    await window.loadFile(entry, query ? { query } : undefined)
+  }
+}
+
+async function openTraceWindow(sessionId: string) {
+  const existing = traceWindows.get(sessionId)
+  if (existing && !existing.isDestroyed()) {
+    showMainWindow(existing, app)
+    return
+  }
+
+  const traceWindow = new BrowserWindow({
+    width: 1180,
+    height: 780,
+    minWidth: 860,
+    minHeight: 560,
+    title: 'Trace',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: preloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  traceWindows.set(sessionId, traceWindow)
+  traceWindow.on('closed', () => {
+    traceWindows.delete(sessionId)
+  })
+  installMainWindowNavigationGuards(traceWindow.webContents, { openExternal: openExternalUrl })
+  await loadRendererEntry(traceWindow, {
+    traceWindow: '1',
+    traceSessionId: sessionId,
+  })
+  showMainWindow(traceWindow, app)
 }
 
 function getServerRuntime() {
@@ -201,13 +252,14 @@ async function handleCommandInvoke(payload: unknown): Promise<unknown> {
 
 function registerIpcHandlers() {
   ipcMain.on(ELECTRON_INTERNAL_CHANNELS.previewMessageFromView, (event, raw) => {
-    getPreviewService().sendMessageToRenderer(event.sender, raw, mainWindow?.webContents)
+    void getPreviewService().sendMessageToRenderer(event.sender, raw, mainWindow?.webContents)
   })
   registerHandler(ELECTRON_IPC_CHANNELS.appGetVersion, () => app.getVersion())
   registerHandler(ELECTRON_IPC_CHANNELS.runtimeGetServerUrl, () => getServerRuntime().getServerUrl())
   registerHandler(ELECTRON_IPC_CHANNELS.commandInvoke, (_event, payload) => handleCommandInvoke(payload))
   registerHandler(ELECTRON_IPC_CHANNELS.shellOpen, (_event, payload) => openExternalUrl(String(payload)))
   registerHandler(ELECTRON_IPC_CHANNELS.shellOpenPath, (_event, payload) => openSystemPath(String(payload)))
+  registerHandler(ELECTRON_IPC_CHANNELS.traceOpenWindow, (_event, payload) => openTraceWindow(String(payload)))
   registerHandler(ELECTRON_IPC_CHANNELS.dialogOpen, (event, payload) =>
     openDialog(currentWindow(event), payload as Parameters<typeof openDialog>[1]))
   registerHandler(ELECTRON_IPC_CHANNELS.dialogSave, (event, payload) =>
@@ -245,19 +297,7 @@ function registerIpcHandlers() {
     else window.maximize()
   })
   registerHandler(ELECTRON_IPC_CHANNELS.windowClose, event => currentWindow(event).close())
-  registerHandler(ELECTRON_IPC_CHANNELS.windowStartDragging, (event, payload) => {
-    if (!payload || typeof payload !== 'object') return undefined
-    const { deltaX, deltaY } = payload as { deltaX?: number, deltaY?: number }
-    if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return undefined
-    const window = currentWindow(event)
-    if (window.isMaximized()) window.unmaximize()
-    const bounds = window.getBounds()
-    window.setPosition(
-      Math.round(bounds.x + deltaX!),
-      Math.round(bounds.y + deltaY!),
-    )
-    return undefined
-  })
+  registerHandler(ELECTRON_IPC_CHANNELS.windowStartDragging, () => undefined)
   registerHandler(ELECTRON_IPC_CHANNELS.windowRequestAttention, event => currentWindow(event).flashFrame(true))
   registerHandler(ELECTRON_IPC_CHANNELS.windowFocus, event => currentWindow(event).focus())
   registerHandler(ELECTRON_IPC_CHANNELS.windowIsMaximized, event => currentWindow(event).isMaximized())
@@ -285,7 +325,7 @@ function registerIpcHandlers() {
   registerHandler(ELECTRON_IPC_CHANNELS.previewSetBounds, (_event, payload) => getPreviewService().setBounds(payload as PreviewBounds))
   registerHandler(ELECTRON_IPC_CHANNELS.previewSetVisible, (_event, payload) => getPreviewService().setVisible(Boolean(payload)))
   registerHandler(ELECTRON_IPC_CHANNELS.previewClose, () => getPreviewService().close())
-  registerHandler(ELECTRON_IPC_CHANNELS.previewMessage, (_event, payload) => getPreviewService().message(payload))
+  registerHandler(ELECTRON_IPC_CHANNELS.previewMessage, (event, payload) => getPreviewService().message(payload, event.sender))
   registerHandler(ELECTRON_IPC_CHANNELS.appModeGet, () => getAppMode(app))
   registerHandler(ELECTRON_IPC_CHANNELS.appModeSet, (_event, payload) => setAppMode(app, payload as Parameters<typeof setAppMode>[1]))
   registerHandler(ELECTRON_IPC_CHANNELS.appModeDetectPortableDir, () => detectPortableDir(app) as PortableDetection)
@@ -339,12 +379,7 @@ async function createMainWindow() {
 
   writeWindowSmokeSnapshot(mainWindow, 'after-create')
 
-  const entry = rendererEntry()
-  if (/^https?:\/\//.test(entry)) {
-    await mainWindow.loadURL(entry)
-  } else {
-    await mainWindow.loadFile(entry)
-  }
+  await loadRendererEntry(mainWindow)
 
   restoreWindowMaximized(mainWindow, restoredState)
   showMainWindow(mainWindow, app)
