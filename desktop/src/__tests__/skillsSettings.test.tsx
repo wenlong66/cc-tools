@@ -9,6 +9,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useTabStore, SETTINGS_TAB_ID } from '../stores/tabStore'
 import { useUIStore } from '../stores/uiStore'
+import { useOpenTargetStore } from '../stores/openTargetStore'
 
 vi.mock('../api/agents', () => ({
   agentsApi: {
@@ -44,6 +45,10 @@ vi.mock('../stores/providerStore', () => ({
   }),
 }))
 
+vi.mock('../stores/openTargetStore', () => ({
+  useOpenTargetStore: vi.fn(),
+}))
+
 vi.mock('../pages/AdapterSettings', () => ({
   AdapterSettings: () => <div>Adapter Settings Mock</div>,
 }))
@@ -67,6 +72,8 @@ vi.mock('../components/chat/CodeViewer', () => ({
 const MOCK_FETCH_SKILLS = vi.fn()
 const MOCK_FETCH_SKILL_DETAIL = vi.fn()
 const MOCK_CLEAR_SELECTION = vi.fn()
+const MOCK_ENSURE_OPEN_TARGETS = vi.fn().mockResolvedValue(undefined)
+const MOCK_OPEN_TARGET = vi.fn().mockResolvedValue(undefined)
 const MOCK_INSTALL_SKILL = vi.mocked(skillsApi.install)
 const MOCK_LIST_CACHED_GIT_REPOS = vi.mocked(skillsApi.listCachedGitRepos)
 const MOCK_ADD_CACHED_GIT_REPO = vi.mocked(skillsApi.addCachedGitRepo)
@@ -79,6 +86,11 @@ function switchToSkillsTab() {
 describe('Settings > Skills tab', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useOpenTargetStore).mockImplementation((selector: any) => selector({
+      targets: [{ id: 'finder', kind: 'file_manager', label: 'Finder', icon: 'finder', platform: 'darwin' }],
+      ensureTargets: MOCK_ENSURE_OPEN_TARGETS,
+      openTarget: MOCK_OPEN_TARGET,
+    }))
     MOCK_FETCH_SKILLS.mockResolvedValue(undefined)
     MOCK_FETCH_SKILL_DETAIL.mockResolvedValue(undefined)
     MOCK_INSTALL_SKILL.mockResolvedValue({

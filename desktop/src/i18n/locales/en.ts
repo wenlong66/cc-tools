@@ -669,6 +669,8 @@ export const en = {
   'settings.skills.enableProject': 'Enable in project',
   'settings.skills.disableProject': 'Disable in project',
   'settings.skills.delete': 'Delete',
+  'settings.skills.openDirectory': 'Open directory',
+  'settings.skills.openDirUnavailable': 'No file manager target is available right now.',
   'settings.skills.enableSuccess': 'Enabled {name}',
   'settings.skills.disableSuccess': 'Disabled {name}',
   'settings.skills.empty': 'No skills installed',

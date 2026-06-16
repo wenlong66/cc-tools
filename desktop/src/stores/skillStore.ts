@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { skillsApi } from '../api/skills'
-import type { SkillMeta, SkillDetail } from '../types/skill'
+import type { SkillMeta, SkillDetail, SkillListRoots } from '../types/skill'
 
 export type SkillDetailReturnTab = 'skills' | 'plugins'
 
 type SkillStore = {
   skills: SkillMeta[]
+  roots: SkillListRoots
   selectedSkill: SkillDetail | null
   selectedSkillReturnTab: SkillDetailReturnTab
   isLoading: boolean
@@ -24,6 +25,10 @@ type SkillStore = {
 
 export const useSkillStore = create<SkillStore>((set) => ({
   skills: [],
+  roots: {
+    user: '~/.cc-tools/skills',
+    project: null,
+  },
   selectedSkill: null,
   selectedSkillReturnTab: 'skills',
   isLoading: false,
@@ -33,8 +38,8 @@ export const useSkillStore = create<SkillStore>((set) => ({
   fetchSkills: async (cwd) => {
     set({ isLoading: true, error: null })
     try {
-      const { skills } = await skillsApi.list(cwd)
-      set({ skills, isLoading: false })
+      const { skills, roots } = await skillsApi.list(cwd)
+      set({ skills, roots, isLoading: false })
     } catch (err) {
       set({
         error: err instanceof Error ? err.message : String(err),

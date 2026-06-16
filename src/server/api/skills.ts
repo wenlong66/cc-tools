@@ -81,6 +81,11 @@ type SkillFile = {
   isEntry?: boolean
 }
 
+type SkillListRoots = {
+  user: string
+  project: string | null
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const MAX_FILES = 50
@@ -129,6 +134,14 @@ function getProjectSkillsDirs(cwd: string): string[] {
 function getProjectInstallRoot(cwd: string): string {
   const projectRoot = findCanonicalGitRoot(cwd) || cwd
   return path.join(projectRoot, '.cc-tools', 'skills')
+}
+
+function getSkillListRoots(cwd: string): SkillListRoots {
+  const projectDirs = getProjectSkillsDirs(cwd)
+  return {
+    user: getUserSkillsDir(),
+    project: projectDirs[0] ?? null,
+  }
 }
 
 function getSkillRepoCacheRoot(): string {
@@ -914,7 +927,8 @@ function coerceInstallScope(value: unknown): InstallSkillScope {
 async function listSkills(url: URL): Promise<Response> {
   const cwd = getRequestedCwd(url)
   const skills = await collectAllSkills(cwd)
-  return Response.json({ skills })
+  const roots = getSkillListRoots(cwd)
+  return Response.json({ skills, roots })
 }
 
 async function getCachedGitRepos(url: URL): Promise<Response> {

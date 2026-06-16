@@ -671,6 +671,8 @@ export const zh: Record<TranslationKey, string> = {
   'settings.skills.enableProject': '项目内启用',
   'settings.skills.disableProject': '项目内禁用',
   'settings.skills.delete': '删除',
+  'settings.skills.openDirectory': '打开目录',
+  'settings.skills.openDirUnavailable': '当前没有可用的文件管理器目标。',
   'settings.skills.enableSuccess': '已启用 {name}',
   'settings.skills.disableSuccess': '已禁用 {name}',
   'settings.skills.empty': '暂无已安装技能',

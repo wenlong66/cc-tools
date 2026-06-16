@@ -8,6 +8,7 @@ import { useSkillStore } from '../../stores/skillStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useTranslation } from '../../i18n'
 import { useUIStore } from '../../stores/uiStore'
+import { useOpenTargetStore } from '../../stores/openTargetStore'
 import { Button } from '../shared/Button'
 import { Modal } from '../shared/Modal'
 import type { SkillMeta, SkillSource } from '../../types/skill'
@@ -50,11 +51,14 @@ function normalizeOptionalValue(value: string): string | undefined {
 }
 
 export function SkillList() {
-  const { skills, isLoading, error, fetchSkills, fetchSkillDetail } =
+  const { skills, roots, isLoading, error, fetchSkills, fetchSkillDetail } =
     useSkillStore()
   const sessions = useSessionStore((s) => s.sessions)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const addToast = useUIStore((s) => s.addToast)
+  const ensureOpenTargets = useOpenTargetStore((s) => s.ensureTargets)
+  const openTarget = useOpenTargetStore((s) => s.openTarget)
+  const openTargets = useOpenTargetStore((s) => s.targets)
   const t = useTranslation()
   const activeSession = sessions.find((session) => session.id === activeSessionId)
   const currentWorkDir = activeSession?.workDir || undefined
@@ -78,6 +82,10 @@ export function SkillList() {
   useEffect(() => {
     void fetchSkills(currentWorkDir)
   }, [fetchSkills, currentWorkDir])
+
+  useEffect(() => {
+    void ensureOpenTargets()
+  }, [ensureOpenTargets])
 
   useEffect(() => {
     if (!isInstallModalOpen || installMode !== 'git') {
@@ -384,6 +392,34 @@ export function SkillList() {
     }
   }
 
+  const handleOpenDirectory = async (directoryPath: string | null) => {
+    if (!directoryPath) {
+      addToast({
+        type: 'error',
+        message: t('settings.skills.openDirUnavailable'),
+      })
+      return
+    }
+
+    const fileManagerTarget = openTargets.find((target) => target.kind === 'file_manager')
+    if (!fileManagerTarget) {
+      addToast({
+        type: 'error',
+        message: t('settings.skills.openDirUnavailable'),
+      })
+      return
+    }
+
+    try {
+      await openTarget(fileManagerTarget.id, directoryPath)
+    } catch (error) {
+      addToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   const toggleCachedRepoExpanded = (repoId: string) => {
     setExpandedRepoIds((current) => ({
       ...current,
@@ -579,15 +615,21 @@ export function SkillList() {
                 (sum, skill) => sum + estimateTokens(skill.contentLength),
                 0,
               )
+              const sourceDirectory =
+                source === 'user'
+                  ? roots.user
+                  : source === 'project'
+                    ? roots.project
+                    : null
 
               return (
                 <section
                   key={source}
                   className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden min-w-0"
                 >
-                  <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface-container-low)]">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface-container-low)]">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span
                           className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${SOURCE_ACCENT_CLASSES[source]}`}
                         >
@@ -608,6 +650,23 @@ export function SkillList() {
                           count: String(group.length),
                         })}
                       </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-[var(--color-text-tertiary)]">
+                        {sourceDirectory && (
+                          <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 font-mono break-all">
+                            {sourceDirectory}
+                          </span>
+                        )}
+                        {sourceDirectory && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void handleOpenDirectory(sourceDirectory)}
+                          >
+                            <span className="material-symbols-outlined text-[14px]">folder_open</span>
+                            {t('settings.skills.openDirectory')}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <div className="text-[11px] text-[var(--color-text-tertiary)] whitespace-nowrap">
                       {t('settings.skills.tokenEstimateShort', {

@@ -13,6 +13,11 @@ export type SkillMeta = {
   canDelete?: boolean
 }
 
+export type SkillListRoots = {
+  user: string
+  project: string | null
+}
+
 export type FileTreeNode = {
   name: string
   path: string

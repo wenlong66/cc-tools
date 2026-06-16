@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { SkillMeta, SkillDetail } from '../types/skill'
+import type { SkillMeta, SkillDetail, SkillListRoots } from '../types/skill'
 
 type SkillInstallScope = 'user' | 'project'
 
@@ -49,7 +49,7 @@ export type AddCachedGitRepoPayload = {
 export const skillsApi = {
   list: (cwd?: string) => {
     const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : ''
-    return api.get<{ skills: SkillMeta[] }>(`/api/skills${query}`, { timeout: 120_000 })
+    return api.get<{ skills: SkillMeta[]; roots: SkillListRoots }>(`/api/skills${query}`, { timeout: 120_000 })
   },
 
   detail: (source: string, name: string, cwd?: string) => {
