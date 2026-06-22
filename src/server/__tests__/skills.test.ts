@@ -174,9 +174,16 @@ describe('Skills API', () => {
     const res = await handleSkillsApi(req, url, segments)
 
     expect(res.status).toBe(200)
-    const body = await res.json() as { skills: Array<{ name: string; source: string }> }
+    const body = await res.json() as {
+      skills: Array<{ name: string; source: string }>
+      roots: { user: string; project: string | null }
+    }
     expect(body.skills).toContainEqual(expect.objectContaining({ name: 'user-skill', source: 'user' }))
     expect(body.skills).toContainEqual(expect.objectContaining({ name: 'project-skill', source: 'project' }))
+    expect(body.roots).toEqual({
+      user: userSkillsRoot,
+      project: path.join(projectRoot, '.cc-tools', 'skills'),
+    })
   })
 
   it('lists user skills installed through a directory symlink or junction', async () => {

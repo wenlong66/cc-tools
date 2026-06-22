@@ -49,7 +49,7 @@ fn determine_startup_portable_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
     let mut default_portable = exe_dir.to_path_buf();
-    default_portable.push("CLAUDE_CONFIG_DIR");
+    default_portable.push(".cc-tools");
 
     // 辅助函数：读取 app-mode.json 获取模式和自定义便携路径
     fn get_mode_from_config(dir: &std::path::Path) -> Option<(String, Option<PathBuf>)> {

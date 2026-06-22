@@ -68,6 +68,75 @@ cp .env.example .env
 
 更多配置见 [环境变量](docs/guide/env-vars.md) 和 [全局使用](docs/guide/global-usage.md)。
 
+## 本地一键打包（Windows）
+
+适合需要在本机直接生成 Windows 安装包或绿色版目录的场景。
+
+### 安装包（MSI）
+
+```cmd
+build-windows-x64.cmd
+```
+
+这个脚本会在仓库根目录检查 `bun`，然后进入 `desktop/` 调用现有的 Windows MSI 打包流程。需要传额外的 Tauri 参数时，也可以直接追加：
+
+```cmd
+build-windows-x64.cmd --debug
+```
+
+### 绿色版（Portable）
+
+```cmd
+build-windows-x64-portable.cmd
+```
+
+这个脚本会在仓库根目录检查 `bun`，然后进入 `desktop/` 显式构建前端和 sidecar，再通过 `tauri build --no-bundle` 生成适合整理成绿色版目录的 Windows 产物。
+
+需要传额外的 Tauri / Cargo runner 参数时，也可以直接追加：
+
+```cmd
+build-windows-x64-portable.cmd -- --locked
+```
+
+绿色版输出后，推荐运行：
+
+- `desktop/build-artifacts/windows-x64-portable/launch-cc-tools-portable.cmd`
+
+也可以直接运行：
+
+- `desktop/build-artifacts/windows-x64-portable/claude-code-desktop.exe`
+
+其中启动脚本会显式设置：
+
+- `CLAUDE_CONFIG_DIR=%~dp0.cc-tools`
+- `CC_TOOLS_APP_PORTABLE_DIR=1`
+
+启动脚本会把真实 portable 数据目录固定到 exe 同级的 `.cc-tools/`。不通过启动脚本直接运行 exe 时，则会回到应用内置的默认 portable 目录判定逻辑。
+
+### 打包目录说明
+
+- `desktop/build-artifacts/windows-x64/`
+  - Windows 安装包输出目录。
+  - 正常情况下会收集这里最适合分发的文件，例如 `.msi`、签名产物和 `BUILD_INFO.txt`。
+  - `BUILD_INFO.txt` 会记录版本号、目标架构、实际输出目录和 MSI 来源，方便回查。
+- `desktop/build-artifacts/windows-x64-portable/`
+  - Windows 绿色版输出目录。
+  - 目录内会包含 `claude-code-desktop.exe`、`claude-sidecar.exe`、`dist/`、`.cc-tools/`、`PORTABLE_README.txt` 和 `BUILD_INFO.txt`。
+  - 启动脚本会把 `CLAUDE_CONFIG_DIR` 指到这个目录下的 `.cc-tools/`，让配置、缓存和 WebView2 数据都跟随应用一起移动。
+  - 这是适合整目录拷贝和直接运行的产物；移动时请保留整个目录，不要只拷单个 exe。
+- `desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/`
+  - Tauri / WiX 原始 bundle 输出目录。
+  - 适合排查 MSI 生成问题，或对比脚本收集前后的原始产物。
+- `desktop/src-tauri/target/x86_64-pc-windows-msvc/release/`
+  - Tauri `--no-bundle` / release 原始编译目录。
+  - 这里能看到桌面端主程序、sidecar 和构建期生成的原始可执行文件，但它不是脚本整理后的最终分发目录。
+- `desktop/dist/`
+  - 前端构建产物目录。
+  - 这里是 React + Vite 打出来的静态资源，属于桌面端打包前置产物，不是最终安装包。
+- `desktop/src-tauri/binaries/`
+  - 桌面端 sidecar 二进制目录。
+  - `build:sidecars` 会先更新这里的可执行文件；绿色版导出也会从这里取 sidecar 并整理到最终 portable 目录。
+
 ---
 
 ## 桌面端亮点

@@ -171,6 +171,10 @@ describe('Settings > Skills tab', () => {
     useUIStore.setState({ pendingSettingsTab: null })
     useSkillStore.setState({
       skills: [],
+      roots: {
+        user: '/home/test/.cc-tools/skills',
+        project: '/workspace/project/.cc-tools/skills',
+      },
       selectedSkill: null,
       selectedSkillReturnTab: 'skills',
       isLoading: false,
@@ -182,7 +186,7 @@ describe('Settings > Skills tab', () => {
     })
   })
 
-  it('renders browser summary and grouped skill cards', () => {
+  it('renders browser summary, grouped skill cards, and scope directories', async () => {
     useSkillStore.setState({
       skills: [
         {
@@ -226,6 +230,18 @@ describe('Settings > Skills tab', () => {
     expect(screen.getByText('Second skill description')).toBeInTheDocument()
     expect(screen.getAllByText('Plugin').length).toBeGreaterThan(0)
     expect(screen.getByText('Telegram Access')).toBeInTheDocument()
+    expect(screen.getByText('/home/test/.cc-tools/skills')).toBeInTheDocument()
+    expect(screen.getByText('/workspace/project/.cc-tools/skills')).toBeInTheDocument()
+
+    const openDirectoryButtons = screen.getAllByText('Open directory')
+    const userOpenDirectoryButton = openDirectoryButtons[0]
+    if (!userOpenDirectoryButton) throw new Error('Missing user open directory button')
+    await act(async () => {
+      fireEvent.click(userOpenDirectoryButton)
+      await Promise.resolve()
+    })
+
+    expect(MOCK_OPEN_TARGET).toHaveBeenCalledWith('finder', '/home/test/.cc-tools/skills')
   })
 
   it('filters installed skills locally by keyword and clears the search', () => {
@@ -431,9 +447,11 @@ describe('Settings > Skills tab', () => {
     })
 
     const refreshButtons = await screen.findAllByText('Refresh')
+    const repoRefreshButton = refreshButtons[refreshButtons.length - 1]
+    if (!repoRefreshButton) throw new Error('Missing cached repository refresh button')
 
     await act(async () => {
-      fireEvent.click(refreshButtons[refreshButtons.length - 1])
+      fireEvent.click(repoRefreshButton)
       await Promise.resolve()
     })
 

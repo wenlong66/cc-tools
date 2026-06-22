@@ -291,8 +291,8 @@ describe('settingsStore app mode', () => {
   it('hydrates app mode from the native desktop command', async () => {
     const invoke = vi.fn().mockResolvedValue({
       mode: 'portable',
-      portableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
-      defaultPortableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
+      portableDir: 'C:\\cc-tools\\.cc-tools',
+      defaultPortableDir: 'C:\\cc-tools\\.cc-tools',
     })
     vi.doMock('@tauri-apps/api/core', () => ({ invoke }))
     const tauriWindow = window as unknown as { __TAURI_INTERNALS__?: object }
@@ -305,8 +305,8 @@ describe('settingsStore app mode', () => {
     expect(invoke).toHaveBeenCalledWith('get_app_mode')
     expect(useSettingsStore.getState().appMode).toEqual({
       mode: 'portable',
-      portableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
-      defaultPortableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
+      portableDir: 'C:\\cc-tools\\.cc-tools',
+      defaultPortableDir: 'C:\\cc-tools\\.cc-tools',
     })
   })
 
@@ -321,7 +321,7 @@ describe('settingsStore app mode', () => {
       appMode: {
         mode: 'default',
         portableDir: null,
-        defaultPortableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
+        defaultPortableDir: 'C:\\cc-tools\\.cc-tools',
       },
       appModeRequiresRestart: false,
     })
@@ -330,13 +330,13 @@ describe('settingsStore app mode', () => {
 
     expect(invoke).toHaveBeenCalledWith('set_app_mode', {
       mode: 'portable',
-      portableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
+      portableDir: 'C:\\cc-tools\\.cc-tools',
     })
     expect(useSettingsStore.getState().appMode).toEqual({
       mode: 'portable',
-      portableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
-      defaultPortableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
-      activeConfigDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
+      portableDir: 'C:\\cc-tools\\.cc-tools',
+      defaultPortableDir: 'C:\\cc-tools\\.cc-tools',
+      activeConfigDir: 'C:\\cc-tools\\.cc-tools',
       configDirSource: 'portable',
     })
     expect(useSettingsStore.getState().appModeRequiresRestart).toBe(true)
@@ -353,7 +353,7 @@ describe('settingsStore app mode', () => {
       appMode: {
         mode: 'default',
         portableDir: null,
-        defaultPortableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
+        defaultPortableDir: 'C:\\cc-tools\\.cc-tools',
       },
       appModeRequiresRestart: false,
     })
@@ -383,7 +383,7 @@ describe('settingsStore app mode', () => {
       appMode: {
         mode: 'portable',
         portableDir: 'D:\\portable-data',
-        defaultPortableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
+        defaultPortableDir: 'C:\\cc-tools\\.cc-tools',
         activeConfigDir: 'D:\\portable-data',
         configDirSource: 'portable',
       },
@@ -399,7 +399,7 @@ describe('settingsStore app mode', () => {
     expect(useSettingsStore.getState().appMode).toEqual({
       mode: 'default',
       portableDir: null,
-      defaultPortableDir: 'C:\\cc-tools\\CLAUDE_CONFIG_DIR',
+      defaultPortableDir: 'C:\\cc-tools\\.cc-tools',
       activeConfigDir: null,
       configDirSource: 'system',
     })

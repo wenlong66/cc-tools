@@ -304,11 +304,11 @@ fn dir_has_portable_data(dir: &Path) -> bool {
         || dir.join("cc-tools").is_dir()
 }
 
-/// Resolve the default portable config directory: exe_dir/CLAUDE_CONFIG_DIR.
+/// Resolve the default portable config directory: exe_dir/.cc-tools.
 fn get_default_portable_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let mut dir = exe.parent()?.to_path_buf();
-    dir.push("CLAUDE_CONFIG_DIR");
+    dir.push(".cc-tools");
     Some(dir)
 }
 

@@ -141,6 +141,7 @@ describe('Content-only pages render without errors', () => {
           hasDirectory: true,
         },
       ],
+      roots: { user: '/home/test/.cc-tools/skills', project: null },
     })
 
     render(<EmptySession />)
@@ -160,7 +161,10 @@ describe('Content-only pages render without errors', () => {
   })
 
   it('EmptySession shows /goal as one command with argument hints, not pseudo subcommands', async () => {
-    vi.mocked(skillsApi.list).mockResolvedValueOnce({ skills: [] })
+    vi.mocked(skillsApi.list).mockResolvedValueOnce({
+      skills: [],
+      roots: { user: '/home/test/.cc-tools/skills', project: null },
+    })
 
     render(<EmptySession />)
 
@@ -456,6 +460,7 @@ describe('Content-only pages render without errors', () => {
           hasDirectory: true,
         },
       ],
+      roots: { user: '/home/test/.cc-tools/skills', project: null },
     })
     useTabStore.setState({ tabs: [{ sessionId: SESSION_ID, title: 'Test', type: 'session' as const, status: 'idle' }], activeTabId: SESSION_ID })
     useSessionStore.setState({

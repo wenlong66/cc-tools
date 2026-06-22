@@ -208,7 +208,7 @@ describe('Settings > General tab', () => {
       appMode: {
         mode: 'default',
         portableDir: null,
-        defaultPortableDir: '/Applications/CC-Tools/CLAUDE_CONFIG_DIR',
+        defaultPortableDir: '/Applications/CC-Tools/.cc-tools',
         activeConfigDir: null,
         configDirSource: 'system',
       },
@@ -218,9 +218,9 @@ describe('Settings > General tab', () => {
         useSettingsStore.setState({
           appMode: {
             mode,
-            portableDir: mode === 'portable' ? portableDir ?? '/Applications/CC-Tools/CLAUDE_CONFIG_DIR' : null,
-            defaultPortableDir: '/Applications/CC-Tools/CLAUDE_CONFIG_DIR',
-            activeConfigDir: mode === 'portable' ? portableDir ?? '/Applications/CC-Tools/CLAUDE_CONFIG_DIR' : null,
+            portableDir: mode === 'portable' ? portableDir ?? '/Applications/CC-Tools/.cc-tools' : null,
+            defaultPortableDir: '/Applications/CC-Tools/.cc-tools',
+            activeConfigDir: mode === 'portable' ? portableDir ?? '/Applications/CC-Tools/.cc-tools' : null,
             configDirSource: mode === 'portable' ? 'portable' : 'system',
           },
           appModeRequiresRestart: true,
@@ -436,7 +436,7 @@ describe('Settings > General tab', () => {
       appMode: {
         mode: 'portable',
         portableDir: '/Users/test/cc-tools-data',
-        defaultPortableDir: '/Applications/CC-Tools/CLAUDE_CONFIG_DIR',
+        defaultPortableDir: '/Applications/CC-Tools/.cc-tools',
         activeConfigDir: '/Users/test/cc-tools-data',
         configDirSource: 'portable',
       },
@@ -471,7 +471,7 @@ describe('Settings > General tab', () => {
     expect(screen.getByText('Choose or enter a portable data directory first.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Use the default portable folder beside the app' }))
-    expect(input).toHaveValue('/Applications/CC-Tools/CLAUDE_CONFIG_DIR')
+    expect(input).toHaveValue('/Applications/CC-Tools/.cc-tools')
     expect(screen.queryByText('Choose or enter a portable data directory first.')).not.toBeInTheDocument()
   })
 
@@ -495,7 +495,7 @@ describe('Settings > General tab', () => {
       appMode: {
         mode: 'portable',
         portableDir: '/env/claude-data',
-        defaultPortableDir: '/Applications/CC-Tools/CLAUDE_CONFIG_DIR',
+        defaultPortableDir: '/Applications/CC-Tools/.cc-tools',
         activeConfigDir: '/env/claude-data',
         configDirSource: 'environment',
       },
