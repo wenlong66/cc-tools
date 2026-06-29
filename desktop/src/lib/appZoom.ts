@@ -1,5 +1,7 @@
-export const APP_ZOOM_STORAGE_KEY = 'cc-tools-app-zoom'
-export const LEGACY_UI_ZOOM_STORAGE_KEY = 'cc-tools-ui-zoom'
+import { getDesktopHost } from './desktopHost'
+
+export const APP_ZOOM_STORAGE_KEY = 'cc-haha-app-zoom'
+export const LEGACY_UI_ZOOM_STORAGE_KEY = 'cc-haha-ui-zoom'
 export const DEFAULT_APP_ZOOM = 1
 export const MIN_APP_ZOOM = 0.5
 export const MAX_APP_ZOOM = 2
@@ -10,10 +12,6 @@ export type AppZoomAction = 'in' | 'out' | 'reset'
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 type KeyboardShortcutInput = Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'key' | 'metaKey'>
-
-function isTauriRuntime() {
-  return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
-}
 
 function getDefaultStorage(): StorageLike | null {
   try {
@@ -73,10 +71,10 @@ function setCssAppZoomMode(level: number, mode: 'css' | 'native') {
 }
 
 async function trySetNativeAppZoom(level: number): Promise<boolean> {
-  if (!isTauriRuntime()) return false
+  const host = getDesktopHost()
+  if (!host.capabilities.zoom) return false
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('set_app_zoom', { zoomFactor: level })
+    await host.zoom.set(level)
     setCssAppZoomMode(level, 'native')
     return true
   } catch {

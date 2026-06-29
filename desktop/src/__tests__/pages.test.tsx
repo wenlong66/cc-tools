@@ -263,6 +263,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -306,6 +307,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -354,6 +356,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -421,6 +424,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -492,6 +496,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -548,6 +553,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -604,6 +610,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [
@@ -630,7 +637,7 @@ describe('Content-only pages render without errors', () => {
     expect(screen.getByText('Slash commands')).toBeInTheDocument()
     expect(screen.getByText('/clear')).toBeInTheDocument()
     expect(screen.getByText('/cost')).toBeInTheDocument()
-    expect(screen.getByText('14 more commands available. Type / to search the full command list.')).toBeInTheDocument()
+    expect(screen.getByText('15 more commands available. Type / to search the full command list.')).toBeInTheDocument()
 
     resetPageStores()
   })
@@ -668,6 +675,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -753,6 +761,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 50_000, output_tokens: 1_000 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -809,6 +818,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -873,6 +883,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -953,6 +964,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -1036,6 +1048,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 72_000, output_tokens: 2_000 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -1105,6 +1118,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -1202,6 +1216,7 @@ describe('Content-only pages render without errors', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 26_000, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -1284,7 +1299,7 @@ describe('AppShell layout renders chrome', () => {
     expect(container.querySelector('aside')).toBeInTheDocument()
     expect(container.innerHTML).toContain('New session')
     expect(container.innerHTML).toContain('Scheduled')
-    expect(container.innerHTML).toContain('Search sessions')
+    expect(container.innerHTML).toContain('Search chats')
     expect(container.innerHTML).toContain('Settings')
   })
 })

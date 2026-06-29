@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo, memo, useState, useCallback, useDeferredValue, useLayoutEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDown, BookMarked, Bot, CheckCircle2, ChevronDown, ChevronRight, CircleStop, FileStack, LoaderCircle, MessageCircle, Settings, Target, XCircle } from 'lucide-react'
 import { ApiError } from '../../api/client'
 import { sessionsApi, type SessionTurnCheckpoint } from '../../api/sessions'
@@ -22,6 +23,8 @@ import { StreamingIndicator } from './StreamingIndicator'
 import { InlineTaskSummary } from './InlineTaskSummary'
 import { CurrentTurnChangeCard } from './CurrentTurnChangeCard'
 import type { AgentTaskNotification, UIMessage } from '../../types/chat'
+import { formatTokenCount } from '../../lib/formatTokenCount'
+import { isTouchH5Document } from '../../lib/touchH5'
 import { ConfirmDialog } from '../shared/ConfirmDialog'
 import { clearWindowSelection, getSelectionPopoverPosition, useSelectionPopoverDismiss } from '../../hooks/useSelectionPopoverDismiss'
 import {
@@ -75,6 +78,11 @@ type ChatSelectionState = {
   y: number
 }
 
+type SelectionPointer = {
+  clientX: number
+  clientY: number
+}
+
 const CHAT_SELECTION_MENU_OFFSET = 10
 const CHAT_SELECTION_MENU_WIDTH = 158
 const CHAT_SELECTION_MENU_HEIGHT = 44
@@ -95,7 +103,7 @@ function getChatSelectionPosition(range: Range, root: HTMLElement, pointer: { cl
 
 function getChatSelectionFromContainer(
   root: HTMLElement | null,
-  pointer: { clientX: number; clientY: number },
+  pointer: SelectionPointer,
 ): ChatSelectionState | null {
   if (!root) return null
   const selection = window.getSelection()
@@ -117,6 +125,13 @@ function getChatSelectionFromContainer(
   }
 }
 
+function getSelectionPointer(event: SelectionPointer): SelectionPointer {
+  return {
+    clientX: event.clientX,
+    clientY: event.clientY,
+  }
+}
+
 function ChatSelectionMenu({
   selection,
   onAdd,
@@ -129,7 +144,7 @@ function ChatSelectionMenu({
   const t = useTranslation()
   if (!selection) return null
 
-  return (
+  return createPortal(
     <button
       ref={popoverRef}
       type="button"
@@ -140,13 +155,9 @@ function ChatSelectionMenu({
     >
       <MessageCircle size={21} strokeWidth={2.15} className="shrink-0 text-[var(--color-text-primary)]" aria-hidden="true" />
       <span>{t('chat.addSelectionToChat')}</span>
-    </button>
+    </button>,
+    document.body,
   )
-}
-
-function formatCompactTokenCount(tokens: number): string {
-  if (tokens >= 1000) return `${Math.round(tokens / 100) / 10}k`
-  return String(tokens)
 }
 
 function getCompactSummaryTitle(message: CompactSummaryEvent, t: ReturnType<typeof useTranslation>) {
@@ -165,7 +176,7 @@ function CompactStatusDivider({ message, state }: { message?: CompactSummaryEven
   const meta = [
     message?.trigger ? t(`chat.compactSummary.trigger.${message.trigger}` as TranslationKey) : null,
     typeof message?.preTokens === 'number'
-      ? t('chat.compactSummary.tokens', { count: formatCompactTokenCount(message.preTokens) })
+      ? t('chat.compactSummary.tokens', { count: formatTokenCount(message.preTokens) })
       : null,
     typeof message?.messagesSummarized === 'number'
       ? t('chat.compactSummary.messages', { count: String(message.messagesSummarized) })
@@ -336,7 +347,7 @@ function BackgroundTaskEventCard({ message }: { message: BackgroundTaskEvent }) 
             </span>
             {task.usage?.totalTokens ? (
               <span className="hidden shrink-0 text-[11px] text-[var(--color-text-tertiary)] sm:inline">
-                {t('chat.backgroundAgents.tokens', { count: task.usage.totalTokens.toLocaleString() })}
+                {t('chat.backgroundAgents.tokens', { count: formatTokenCount(task.usage.totalTokens) })}
               </span>
             ) : null}
             {duration ? (
@@ -388,6 +399,8 @@ function SelectableChatMessage({
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const selectionMenuRef = useRef<HTMLButtonElement>(null)
+  const lastSelectionPointerRef = useRef<SelectionPointer | null>(null)
+  const selectionUpdateFrameRef = useRef<number | null>(null)
   const addReference = useWorkspaceChatContextStore((state) => state.addReference)
   const [selectionMenu, setSelectionMenu] = useState<ChatSelectionState | null>(null)
   const t = useTranslation()
@@ -397,11 +410,76 @@ function SelectableChatMessage({
 
   useEffect(() => {
     setSelectionMenu(null)
+    lastSelectionPointerRef.current = null
   }, [content, messageId])
 
   const dismissSelectionMenu = useCallback(() => {
     setSelectionMenu(null)
   }, [])
+
+  const queueSelectionMenuUpdate = useCallback((pointer?: SelectionPointer) => {
+    if (pointer) lastSelectionPointerRef.current = pointer
+
+    if (selectionUpdateFrameRef.current !== null) {
+      window.cancelAnimationFrame(selectionUpdateFrameRef.current)
+    }
+
+    selectionUpdateFrameRef.current = window.requestAnimationFrame(() => {
+      selectionUpdateFrameRef.current = window.requestAnimationFrame(() => {
+        selectionUpdateFrameRef.current = null
+        const root = rootRef.current
+        const rootRect = root?.getBoundingClientRect()
+        const fallbackPointer = lastSelectionPointerRef.current ?? {
+          clientX: (rootRect?.left ?? 0) + 24,
+          clientY: (rootRect?.top ?? 0) + 24,
+        }
+        setSelectionMenu(getChatSelectionFromContainer(root, fallbackPointer))
+      })
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (selectionUpdateFrameRef.current !== null) {
+        window.cancelAnimationFrame(selectionUpdateFrameRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      lastSelectionPointerRef.current = getSelectionPointer(event)
+    }
+
+    const handlePointerUp = (event: PointerEvent) => {
+      queueSelectionMenuUpdate(getSelectionPointer(event))
+    }
+
+    const handleMouseUp = (event: MouseEvent) => {
+      queueSelectionMenuUpdate(getSelectionPointer(event))
+    }
+
+    const handleSelectionChange = () => {
+      queueSelectionMenuUpdate()
+    }
+
+    const handleKeyUp = () => {
+      queueSelectionMenuUpdate()
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    document.addEventListener('pointerup', handlePointerUp, true)
+    document.addEventListener('mouseup', handleMouseUp, true)
+    document.addEventListener('selectionchange', handleSelectionChange)
+    document.addEventListener('keyup', handleKeyUp, true)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true)
+      document.removeEventListener('pointerup', handlePointerUp, true)
+      document.removeEventListener('mouseup', handleMouseUp, true)
+      document.removeEventListener('selectionchange', handleSelectionChange)
+      document.removeEventListener('keyup', handleKeyUp, true)
+    }
+  }, [queueSelectionMenuUpdate])
 
   useSelectionPopoverDismiss({
     active: Boolean(selectionMenu),
@@ -426,8 +504,13 @@ function SelectableChatMessage({
   return (
     <div
       ref={rootRef}
+      data-chat-selectable-message={role}
+      onPointerDown={(event) => {
+        if (event.pointerType === 'mouse' && event.button !== 0) return
+        lastSelectionPointerRef.current = getSelectionPointer(event)
+      }}
       onMouseUp={(event) => {
-        setSelectionMenu(getChatSelectionFromContainer(rootRef.current, event))
+        queueSelectionMenuUpdate(getSelectionPointer(event))
       }}
       onKeyDown={(event) => {
         if (event.key === 'Escape') setSelectionMenu(null)
@@ -687,6 +770,40 @@ function buildTurnCardInsertionMap(
   return cardsByRenderIndex
 }
 
+/**
+ * Map each render item to the REAL changed files of the turn it belongs to, so an
+ * assistant message can anchor its output chips on files that were actually
+ * written this turn instead of guessing paths from the prose. Items are attributed
+ * to the most recent preceding non-pending user message (the turn boundary).
+ */
+function buildChangedFilesByRenderIndex(
+  renderItems: RenderItem[],
+  turnChangeCards: TurnChangeCardModel[],
+): Map<number, string[]> {
+  const filesByTurnId = new Map<string, string[]>()
+  for (const card of turnChangeCards) {
+    if (card.checkpoint.code.filesChanged.length > 0) {
+      filesByTurnId.set(card.target.messageId, card.checkpoint.code.filesChanged)
+    }
+  }
+  if (filesByTurnId.size === 0) return new Map()
+
+  const filesByRenderIndex = new Map<number, string[]>()
+  let activeTurnId: string | null = null
+  renderItems.forEach((item, index) => {
+    if (item.kind === 'message' && item.message.type === 'user_text' && !item.message.pending) {
+      activeTurnId = item.message.id
+      return
+    }
+    if (activeTurnId) {
+      const files = filesByTurnId.get(activeTurnId)
+      if (files) filesByRenderIndex.set(index, files)
+    }
+  })
+
+  return filesByRenderIndex
+}
+
 function getApiErrorMessage(error: unknown) {
   return error instanceof ApiError
     ? typeof error.body === 'object' && error.body && 'message' in error.body
@@ -791,6 +908,11 @@ const SCROLL_BOTTOM_SENTINEL = 1_000_000_000
 const MAX_SCROLL_SNAPSHOTS = 100
 const VIRTUALIZE_MIN_RENDER_ITEMS = 120
 const VIRTUALIZE_MIN_CONTENT_CHARS = 120_000
+// Touch-H5 disables content-visibility paint skipping for selection
+// correctness (globals.css), which makes virtualization the only paint bound
+// for long transcripts there — so it kicks in at half the desktop thresholds.
+const TOUCH_H5_VIRTUALIZE_MIN_RENDER_ITEMS = 60
+const TOUCH_H5_VIRTUALIZE_MIN_CONTENT_CHARS = 60_000
 const VIRTUAL_OVERSCAN_PX = 1200
 const VIRTUAL_DEFAULT_VIEWPORT_HEIGHT = 720
 const VIRTUAL_MIN_ITEM_HEIGHT = 48
@@ -799,6 +921,7 @@ const VIRTUAL_MAX_ITEM_HEIGHT = 24_000
 // convert those into bottom-scroll corrections.
 const CONTENT_RESIZE_FOLLOW_MIN_DELTA_PX = 2
 const EMPTY_MESSAGES: UIMessage[] = []
+const EMPTY_AGENT_TASK_NOTIFICATIONS: Record<string, AgentTaskNotification> = {}
 const CHAT_SCROLL_AREA_CLASS = [
   'chat-scroll-area',
   '[scrollbar-width:auto]',
@@ -949,13 +1072,18 @@ function getRenderItemContentWeight(item: RenderItem): number {
   return item.toolCalls.reduce((total, toolCall) => total + getMessageContentWeight(toolCall), 0)
 }
 
-function shouldVirtualizeRenderItems(metrics: VirtualRenderItemMetric[]) {
-  if (metrics.length >= VIRTUALIZE_MIN_RENDER_ITEMS) return true
+export function shouldVirtualizeRenderItems(
+  metrics: VirtualRenderItemMetric[],
+  touchH5 = isTouchH5Document(),
+) {
+  const minRenderItems = touchH5 ? TOUCH_H5_VIRTUALIZE_MIN_RENDER_ITEMS : VIRTUALIZE_MIN_RENDER_ITEMS
+  const minContentChars = touchH5 ? TOUCH_H5_VIRTUALIZE_MIN_CONTENT_CHARS : VIRTUALIZE_MIN_CONTENT_CHARS
+  if (metrics.length >= minRenderItems) return true
 
   let totalWeight = 0
   for (const metric of metrics) {
     totalWeight += metric.contentWeight
-    if (totalWeight >= VIRTUALIZE_MIN_CONTENT_CHARS) return true
+    if (totalWeight >= minContentChars) return true
   }
   return false
 }
@@ -1023,7 +1151,7 @@ function getMessageMetricSignature(message: UIMessage): string {
     case 'system':
       return `${message.type}:${message.content.length}`
     case 'tool_use':
-      return `${message.type}:${message.toolName}:${message.toolUseId}:${message.partialInput?.length ?? 0}:${message.isPending ? 1 : 0}`
+      return `${message.type}:${message.toolName}:${message.toolUseId}:${message.partialInput?.length ?? 0}:${message.isPending ? 1 : 0}:${message.status ?? ''}`
     case 'tool_result':
       return `${message.type}:${message.toolUseId}:${message.isError ? 1 : 0}`
     case 'compact_summary':
@@ -1221,8 +1349,9 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
   const messages = sessionState?.messages ?? EMPTY_MESSAGES
   const chatState = sessionState?.chatState ?? 'idle'
   const streamingText = sessionState?.streamingText ?? ''
+  const streamingToolInput = sessionState?.streamingToolInput ?? ''
   const activeThinkingId = sessionState?.activeThinkingId ?? null
-  const agentTaskNotifications = sessionState?.agentTaskNotifications ?? {}
+  const agentTaskNotifications = sessionState?.agentTaskNotifications ?? EMPTY_AGENT_TASK_NOTIFICATIONS
   const activeAskUserQuestionToolUseId =
     sessionState?.pendingPermission?.toolName === 'AskUserQuestion'
       ? sessionState.pendingPermission.toolUseId
@@ -1377,11 +1506,16 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
     // prevent the jump-to-latest button from flickering during auto-scroll.
     const container = scrollContainerRef.current
     if (!container) return
-    const shouldIgnoreRecentProgrammaticScroll =
-      performance.now() < ignoreProgrammaticScrollUntilRef.current &&
+    const matchesProgrammaticScrollTop =
       ignoreProgrammaticScrollTopRef.current !== null &&
       Math.abs(container.scrollTop - ignoreProgrammaticScrollTopRef.current) < 1
-    if (isProgrammaticScrollingRef.current || shouldIgnoreRecentProgrammaticScroll) {
+    const shouldIgnoreRecentProgrammaticScroll =
+      matchesProgrammaticScrollTop &&
+      (
+        isProgrammaticScrollingRef.current ||
+        performance.now() < ignoreProgrammaticScrollUntilRef.current
+      )
+    if (shouldIgnoreRecentProgrammaticScroll) {
       syncVirtualViewportFromContainer(container)
       return
     }
@@ -1475,7 +1609,7 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
     }
 
     scrollToBottom('auto')
-  }, [messages.length, resolvedSessionId, scrollToBottom, streamingText])
+  }, [messages.length, resolvedSessionId, scrollToBottom, streamingText, streamingToolInput])
 
   const handleJumpToLatest = useCallback(() => {
     scrollToBottom('auto')
@@ -1506,6 +1640,24 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
     return () => observer.disconnect()
   }, [scrollToBottom, shouldFollowContentResize])
 
+  // Touch-H5 only: the visual-viewport fit (touchH5.ts) shrinks the scroll
+  // container when the soft keyboard opens. If the user was reading the tail,
+  // keep the latest message pinned above the keyboard instead of letting the
+  // shorter container cut it off.
+  useEffect(() => {
+    if (!isTouchH5Document()) return
+    const container = scrollContainerRef.current
+    if (!container || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(() => {
+      if (!shouldAutoScrollRef.current) return
+      scrollToBottom('auto')
+    })
+    observer.observe(container)
+
+    return () => observer.disconnect()
+  }, [scrollToBottom])
+
   const { toolResultMap, childToolCallsByParent, renderItems } = useMemo(
     () => buildRenderModel(messages, activeAskUserQuestionToolUseId),
     [activeAskUserQuestionToolUseId, messages],
@@ -1531,6 +1683,10 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
       : null
   const turnCardsByRenderIndex = useMemo(
     () => buildTurnCardInsertionMap(renderItems, turnChangeCards),
+    [renderItems, turnChangeCards],
+  )
+  const changedFilesByRenderIndex = useMemo(
+    () => buildChangedFilesByRenderIndex(renderItems, turnChangeCards),
     [renderItems, turnChangeCards],
   )
   const renderItemKeys = useMemo(
@@ -1791,6 +1947,7 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
                 : null
             }
             branchAction={branchActionByMessageId.get(item.message.id)}
+            turnChangedFiles={changedFilesByRenderIndex.get(index)}
           />
         )}
 
@@ -1798,7 +1955,6 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
           <CurrentTurnChangeCard
             key={`turn-change-${card.target.messageId}`}
             sessionId={resolvedSessionId}
-            targetUserMessageId={card.checkpoint.target.targetUserMessageId}
             checkpoint={card.checkpoint}
             workDir={card.workDir}
             error={turnActionErrors[card.target.messageId] ?? null}
@@ -1841,7 +1997,7 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
                 {content}
               </MeasuredRenderItem>
             ) : (
-              <div key={itemKey} className={CHAT_RENDER_ITEM_CLASS}>
+              <div key={itemKey} className={`${CHAT_RENDER_ITEM_CLASS} chat-render-item--cv`}>
                 {content}
               </div>
             )
@@ -1922,6 +2078,7 @@ export const MessageBlock = memo(function MessageBlock({
   agentTaskNotifications,
   toolResult,
   branchAction,
+  turnChangedFiles,
 }: {
   sessionId?: string | null
   message: UIMessage
@@ -1933,6 +2090,7 @@ export const MessageBlock = memo(function MessageBlock({
     loading?: boolean
     onBranch: () => void
   }
+  turnChangedFiles?: string[]
 }) {
   const t = useTranslation()
 
@@ -1949,6 +2107,7 @@ export const MessageBlock = memo(function MessageBlock({
             content={message.content}
             attachments={message.attachments}
             branchAction={branchAction}
+            timestamp={message.timestamp}
           />
         </SelectableChatMessage>
       )
@@ -1960,7 +2119,13 @@ export const MessageBlock = memo(function MessageBlock({
           role="assistant"
           content={message.content}
         >
-          <AssistantMessage content={message.content} branchAction={branchAction} />
+          <AssistantMessage
+            content={message.content}
+            branchAction={branchAction}
+            sessionId={sessionId ?? undefined}
+            timestamp={message.timestamp}
+            turnChangedFiles={turnChangedFiles}
+          />
         </SelectableChatMessage>
       )
     case 'thinking':
@@ -1982,6 +2147,7 @@ export const MessageBlock = memo(function MessageBlock({
           input={message.input}
           result={toolResult}
           isPending={message.isPending}
+          status={message.status}
           partialInput={message.partialInput}
           agentTaskNotification={
             message.toolName === 'Agent'
@@ -2009,16 +2175,26 @@ export const MessageBlock = memo(function MessageBlock({
         />
       )
     case 'error': {
+      const businessErrorKey = message.businessErrorCode
+        ? `businessError.${message.businessErrorCode}` as TranslationKey
+        : null
+      const businessErrorText = businessErrorKey ? t(businessErrorKey) : null
       const errorKey = message.code ? `error.${message.code}` as TranslationKey : null
       const errorText = errorKey ? t(errorKey) : null
-      const displayMessage = (errorText && errorText !== errorKey) ? errorText : message.message
+      const displayMessage =
+        businessErrorText && businessErrorText !== businessErrorKey
+          ? businessErrorText
+          : (errorText && errorText !== errorKey)
+            ? errorText
+            : message.message
       const showRawDetail =
+        !message.businessErrorCode &&
         Boolean(message.message) &&
         message.message.trim() !== '' &&
         message.message !== displayMessage
       return (
         <div className="mb-3 px-4 py-2.5 rounded-lg border border-[var(--color-error)]/20 bg-[var(--color-error-container)]/28 text-sm text-[var(--color-error)]">
-          <strong>Error:</strong> {displayMessage}
+          <strong>{t('common.error')}:</strong> {displayMessage}
           {showRawDetail && (
             <div className="mt-1 whitespace-pre-wrap text-xs text-[var(--color-on-error-container)]/85">
               {message.message}

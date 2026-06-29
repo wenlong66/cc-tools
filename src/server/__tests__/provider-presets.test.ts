@@ -97,8 +97,8 @@ describe('provider presets API', () => {
     expect(kimi?.defaultModels.main).toBe('kimi-k2.6')
     expect(kimi?.defaultEnv?.CC_TOOLS_SEND_DISABLED_THINKING).toBe('1')
     expect(minimax?.authStrategy).toBe('auth_token')
-    expect(minimax?.defaultModels.main).toBe('MiniMax-M2.7')
-    expect(minimax?.modelContextWindows?.['MiniMax-M2.7']).toBe(204800)
+    expect(minimax?.defaultModels.main).toBe('MiniMax-M3')
+    expect(minimax?.modelContextWindows?.['MiniMax-M3']).toBe(1000000)
     expect(jiekouai?.baseUrl).toBe('https://api.jiekou.ai/anthropic')
     expect(jiekouai?.authStrategy).toBe('auth_token')
     expect(jiekouai?.defaultModels.main).toBe('claude-sonnet-4-6')
@@ -194,5 +194,14 @@ describe('provider presets API', () => {
 
     const updatedRaw = await fs.readFile(path.join(tmpDir, 'cc-tools', 'settings.json'), 'utf-8')
     expect(JSON.parse(updatedRaw)).toEqual(updateBody)
+  })
+
+  test('provider presets carry docs-backed context windows for current coding models', () => {
+    const byId = new Map(PROVIDER_PRESETS.map((preset) => [preset.id, preset]))
+
+    for (const id of ['deepseek', 'zhipuglm', 'kimi', 'minimax']) {
+      const preset = byId.get(id)!
+      expect(preset.modelContextWindows?.[preset.defaultModels.main]).toBeGreaterThan(0)
+    }
   })
 })

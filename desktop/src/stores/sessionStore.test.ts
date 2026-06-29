@@ -21,6 +21,20 @@ import { useTabStore } from './tabStore'
 
 const initialState = useSessionStore.getState()
 
+function makeSession(id: string, modifiedAt: string, title = id) {
+  return {
+    id,
+    title,
+    createdAt: modifiedAt,
+    modifiedAt,
+    messageCount: 1,
+    projectPath: '/workspace/project',
+    projectRoot: '/workspace/project',
+    workDir: '/workspace/project',
+    workDirExists: true,
+  }
+}
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -134,6 +148,85 @@ describe('sessionStore', () => {
     await useSessionStore.getState().fetchSessions()
 
     expect(useTabStore.getState().tabs[0]?.title).toBe('使用bash写一个shell，随便写点什么东西')
+  })
+
+  it('requests a large default session page for noisy history directories', async () => {
+    listMock.mockResolvedValue({
+      sessions: [makeSession('session-newest', '2026-05-07T00:00:03.000Z')],
+      total: 474,
+    })
+
+    await useSessionStore.getState().fetchSessions()
+
+    expect(listMock).toHaveBeenCalledWith({ limit: 400 })
+  })
+
+  it('ignores stale session list responses when a newer refresh finishes first', async () => {
+    const slow = createDeferred<{
+      sessions: Array<{
+        id: string
+        title: string
+        createdAt: string
+        modifiedAt: string
+        messageCount: number
+        projectPath: string
+        workDir: string | null
+        workDirExists: boolean
+      }>
+      total: number
+    }>()
+    const fast = createDeferred<{
+      sessions: Array<{
+        id: string
+        title: string
+        createdAt: string
+        modifiedAt: string
+        messageCount: number
+        projectPath: string
+        workDir: string | null
+        workDirExists: boolean
+      }>
+      total: number
+    }>()
+    listMock
+      .mockReturnValueOnce(slow.promise)
+      .mockReturnValueOnce(fast.promise)
+
+    const first = useSessionStore.getState().fetchSessions()
+    const second = useSessionStore.getState().fetchSessions()
+
+    fast.resolve({
+      sessions: [{
+        id: 'new-session',
+        title: 'New session',
+        createdAt: '2026-05-07T00:00:00.000Z',
+        modifiedAt: '2026-05-07T00:00:02.000Z',
+        messageCount: 1,
+        projectPath: '',
+        workDir: '/workspace/new',
+        workDirExists: true,
+      }],
+      total: 1,
+    })
+    await second
+
+    slow.resolve({
+      sessions: [{
+        id: 'old-session',
+        title: 'Old session',
+        createdAt: '2026-05-07T00:00:00.000Z',
+        modifiedAt: '2026-05-07T00:00:01.000Z',
+        messageCount: 1,
+        projectPath: '',
+        workDir: '/workspace/old',
+        workDirExists: true,
+      }],
+      total: 1,
+    })
+    await first
+
+    expect(useSessionStore.getState().sessions).toHaveLength(1)
+    expect(useSessionStore.getState().sessions[0]?.id).toBe('new-session')
   })
 
   it('forwards direct branch switch repository options when creating a session', async () => {

@@ -225,7 +225,16 @@ function makeUserEntry(content: string, uuid?: string): Record<string, unknown> 
   }
 }
 
-function makeAssistantEntry(content: string, parentUuid?: string): Record<string, unknown> {
+function makeAssistantEntry(
+  content: string,
+  parentUuid?: string,
+  usage?: {
+    input_tokens?: number
+    output_tokens?: number
+    cache_read_input_tokens?: number
+    cache_creation_input_tokens?: number
+  },
+): Record<string, unknown> {
   return {
     parentUuid: parentUuid || null,
     isSidechain: false,
@@ -236,6 +245,7 @@ function makeAssistantEntry(content: string, parentUuid?: string): Record<string
       type: 'message',
       role: 'assistant',
       content: [{ type: 'text', text: content }],
+      ...(usage ? { usage } : {}),
     },
     uuid: crypto.randomUUID(),
     timestamp: '2026-01-01T00:02:00.000Z',
@@ -541,7 +551,7 @@ describe('SessionService', () => {
     expect(page2.sessions).toHaveLength(1)
   })
 
-  it('should only parse the requested page when listing many sessions', async () => {
+  it('should only scan the requested page when listing many sessions', async () => {
     for (let i = 0; i < 12; i++) {
       const id = `1000000${i.toString(16)}-bbbb-cccc-dddd-eeeeeeeeeeee`
       const filePath = await writeSessionFile('-tmp-many-sessions', id, [
@@ -553,20 +563,64 @@ describe('SessionService', () => {
     }
 
     const serviceWithSpy = service as unknown as {
-      readJsonlFile: (...args: unknown[]) => Promise<unknown>
+      scanSessionListSummary: (...args: unknown[]) => Promise<unknown>
     }
-    const originalReadJsonlFile = serviceWithSpy.readJsonlFile.bind(service)
-    let readCount = 0
-    serviceWithSpy.readJsonlFile = async (...args) => {
-      readCount += 1
-      return originalReadJsonlFile(...args)
+    const originalScanSessionListSummary = serviceWithSpy.scanSessionListSummary.bind(service)
+    let scanCount = 0
+    serviceWithSpy.scanSessionListSummary = async (...args) => {
+      scanCount += 1
+      return originalScanSessionListSummary(...args)
     }
 
     const result = await service.listSessions({ limit: 3, offset: 0 })
 
     expect(result.total).toBe(12)
     expect(result.sessions).toHaveLength(3)
-    expect(readCount).toBe(3)
+    expect(scanCount).toBe(3)
+  })
+
+  it('should reuse cached list metadata for repeated requests', async () => {
+    for (let i = 0; i < 5; i++) {
+      const id = `2000000${i.toString(16)}-bbbb-cccc-dddd-eeeeeeeeeeee`
+      const filePath = await writeSessionFile('-tmp-cached-sessions', id, [
+        makeSnapshotEntry(),
+        makeUserEntry(`Cached message ${i}`),
+      ])
+      const mtime = new Date(Date.now() - i * 1000)
+      await fs.utimes(filePath, mtime, mtime)
+    }
+
+    const serviceWithSpy = service as unknown as {
+      scanSessionListSummary: (...args: unknown[]) => Promise<unknown>
+    }
+    const originalScanSessionListSummary = serviceWithSpy.scanSessionListSummary.bind(service)
+    let scanCount = 0
+    serviceWithSpy.scanSessionListSummary = async (...args) => {
+      scanCount += 1
+      return originalScanSessionListSummary(...args)
+    }
+
+    const first = await service.listSessions({ limit: 3, offset: 0 })
+    const second = await service.listSessions({ limit: 3, offset: 0 })
+
+    expect(first.sessions.map((session) => session.id)).toEqual(second.sessions.map((session) => session.id))
+    expect(scanCount).toBe(3)
+  })
+
+  it('should invalidate cached list metadata after writes', async () => {
+    const sessionId = '30000000-bbbb-cccc-dddd-eeeeeeeeeeee'
+    await writeSessionFile('-tmp-cache-invalidation', sessionId, [
+      makeSnapshotEntry(),
+      makeUserEntry('Original title'),
+    ])
+
+    const first = await service.listSessions({ limit: 10, offset: 0 })
+    expect(first.sessions[0]!.title).toBe('Original title')
+
+    await service.renameSession(sessionId, 'Renamed title')
+    const second = await service.listSessions({ limit: 10, offset: 0 })
+
+    expect(second.sessions[0]!.title).toBe('Renamed title')
   })
 
   it('should filter sessions by project', async () => {
@@ -815,6 +869,20 @@ describe('SessionService', () => {
         },
         uuid: crypto.randomUUID(),
         timestamp: '2026-01-01T00:00:04.000Z',
+      },
+      {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '<command-name>/agent</command-name>\n<command-message>agent</command-message>\n<command-args>Plan 222</command-args>',
+            },
+          ],
+        },
+        uuid: crypto.randomUUID(),
+        timestamp: '2026-01-01T00:00:05.000Z',
       },
       makeAssistantEntry('正常助手消息', crypto.randomUUID()),
     ])
@@ -1140,6 +1208,30 @@ describe('SessionService', () => {
       worktree: true,
       worktreePath: expect.stringContaining(path.join('.cc-tools', 'worktrees', 'desktop-feature-rail-')),
     })
+  })
+
+  it('should persist session permission mode in launch metadata', async () => {
+    const workDir = path.join(tmpDir, 'permission-workdir')
+    await fs.mkdir(workDir, { recursive: true })
+    const { sessionId } = await (service.createSession as unknown as (
+      workDir?: string,
+      repositoryOptions?: unknown,
+      permissionMode?: string,
+    ) => Promise<{ sessionId: string; workDir: string }>)(workDir, undefined, 'acceptEdits')
+
+    let launchInfo = await service.getSessionLaunchInfo(sessionId)
+    expect(launchInfo?.permissionMode).toBe('acceptEdits')
+
+    await (service.appendSessionMetadata as unknown as (
+      sessionId: string,
+      metadata: { workDir: string; permissionMode?: string },
+    ) => Promise<void>)(sessionId, {
+      workDir,
+      permissionMode: 'plan',
+    })
+
+    launchInfo = await service.getSessionLaunchInfo(sessionId)
+    expect(launchInfo?.permissionMode).toBe('plan')
   })
 
   it('should remove stale placeholder files after native CLI worktree startup', async () => {
@@ -1877,6 +1969,27 @@ describe('Sessions API', () => {
     )
   })
 
+  it('GET /api/sessions/:id/inspection should report persisted permission mode for inactive sessions', async () => {
+    const workDir = await fs.mkdtemp(path.join(tmpDir, 'api-session-permission-'))
+    const createRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workDir, permissionMode: 'bypassPermissions' }),
+    })
+    expect(createRes.status).toBe(201)
+
+    const { sessionId } = (await createRes.json()) as { sessionId: string }
+    const inspectionRes = await fetch(`${baseUrl}/api/sessions/${sessionId}/inspection?includeContext=0`)
+    expect(inspectionRes.status).toBe(200)
+
+    const inspection = (await inspectionRes.json()) as {
+      active: boolean
+      status: { permissionMode?: string }
+    }
+    expect(inspection.active).toBe(false)
+    expect(inspection.status.permissionMode).toBe('bypassPermissions')
+  })
+
   it('GET /api/sessions/repository-context should return branch launch metadata', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     const res = await fetch(
@@ -1954,7 +2067,7 @@ describe('Sessions API', () => {
     await writeSessionFile('-tmp-api-test', sessionId, [
       makeSnapshotEntry(),
       makeUserEntry('Hello'),
-      makeAssistantEntry('World'),
+      makeAssistantEntry('World', undefined, { input_tokens: 1234, output_tokens: 56 }),
       makeUserEntry(
         '<task-notification>\n<task-id>bg-1</task-id>\n<tool-use-id>toolu_bg</tool-use-id>\n<status>failed</status>\n<summary>Background command failed &amp; stopped</summary>\n<result>Stack trace &amp; failed assertion</result>\n<output-file>C:\\Temp\\bg.output</output-file>\n</task-notification>',
         crypto.randomUUID(),
@@ -1970,6 +2083,10 @@ describe('Sessions API', () => {
       taskNotifications: unknown[]
     }
     expect(body.messages).toHaveLength(2)
+    expect(body.messages[1]).toMatchObject({
+      type: 'assistant',
+      usage: { input_tokens: 1234, output_tokens: 56 },
+    })
     expect(JSON.stringify(body.messages)).not.toContain('<task-notification>')
     expect(body.taskNotifications).toEqual([
       {

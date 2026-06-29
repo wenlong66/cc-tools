@@ -8,7 +8,7 @@
  */
 
 import * as fs from 'fs/promises'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import * as path from 'path'
 import * as os from 'os'
 import * as crypto from 'crypto'
@@ -39,6 +39,20 @@ export type TaskRun = {
   exitCode?: number
   durationMs?: number
   sessionId?: string // links to a session for rich output rendering
+}
+
+export function buildCronTaskSpawnOptions(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+) {
+  return {
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    cwd,
+    env,
+    windowsHide: true,
+  } as const
 }
 
 // ─── Output extraction ────────────────────────────────────────────────────────
@@ -368,6 +382,9 @@ export class CronScheduler {
 
   /** Stop the scheduler and kill any running task processes. */
   stop(): void {
+    const wasRunning = this.intervalId !== null || this.runningTasks.size > 0
+    if (!wasRunning) return
+
     if (this.intervalId) {
       clearInterval(this.intervalId)
       this.intervalId = null
@@ -453,13 +470,18 @@ export class CronScheduler {
       console.warn(`[cron] task ${task.id}: folderPath "${task.folderPath}" is not a valid directory, falling back to homedir`)
       workDir = os.homedir()
     }
+    workDir = this.resolveCanonicalWorkDir(workDir)
 
     // Only create a session when explicitly requested (manual "Run Now"),
     // not for automatic cron runs — avoids flooding the sidebar.
     let sessionId: string | undefined
     if (options?.createSession) {
       try {
-        const result = await this.sessionService.createSession(workDir)
+        const result = await this.sessionService.createSession(
+          workDir,
+          undefined,
+          'bypassPermissions',
+        )
         sessionId = result.sessionId
         // Delete the placeholder JSONL file so the CLI can create it fresh
         // with actual content. Same pattern as conversationService.ts.
@@ -510,13 +532,7 @@ export class CronScheduler {
     const childEnv = await this.buildTaskChildEnv(workDir, task)
     const proc = Bun.spawn(
       cliArgs,
-      {
-        stdin: 'pipe',
-        stdout: 'pipe',
-        stderr: 'pipe',
-        cwd: workDir,
-        env: childEnv,
-      },
+      buildCronTaskSpawnOptions(workDir, childEnv),
     )
 
     this.runningTasks.set(task.id, { proc, startedAt: Date.now(), runId })
@@ -596,6 +612,7 @@ export class CronScheduler {
         }
       }
 
+      await this.persistScheduledSessionPermission(sessionId, workDir)
       await updateRun(completedRun)
 
       // Send IM notification if configured
@@ -627,15 +644,40 @@ export class CronScheduler {
           new Date(completedAt).getTime() - new Date(startedAt).getTime(),
       }
 
+      await this.persistScheduledSessionPermission(sessionId, workDir)
       await updateRun(failedRun)
 
       return failedRun
     }
   }
 
+  private async persistScheduledSessionPermission(
+    sessionId: string | undefined,
+    workDir: string,
+  ): Promise<void> {
+    if (!sessionId) return
+    await this.sessionService.appendSessionMetadata(sessionId, {
+      workDir,
+      permissionMode: 'bypassPermissions',
+    }).catch(() => {
+      // The task result is still valid even if session metadata refresh fails.
+    })
+  }
+
+  private resolveCanonicalWorkDir(workDir: string): string {
+    try {
+      return realpathSync(workDir)
+    } catch {
+      return workDir
+    }
+  }
+
   private getRuntimeArgs(task: CronTask): string[] {
     const model = task.model?.trim()
-    return model ? ['--model', model] : []
+    return [
+      ...(model ? ['--model', model] : []),
+      '--dangerously-skip-permissions',
+    ]
   }
 
   private async buildTaskChildEnv(

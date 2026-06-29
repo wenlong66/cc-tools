@@ -7,6 +7,8 @@
  *   GET    /api/sessions            — 列出会话
  *   GET    /api/sessions/:id        — 获取会话详情
  *   GET    /api/sessions/:id/messages — 获取会话消息
+ *   GET    /api/sessions/:id/trace — 获取会话级模型调用 trace（body preview 裁剪后的列表视图）
+ *   GET    /api/sessions/:id/trace/calls/:callId — 获取单次调用的完整 trace 记录
  *   GET    /api/sessions/:id/turn-checkpoints — 获取按轮次保留的 checkpoint 预览
  *   GET    /api/sessions/:id/turn-checkpoints/diff — 获取绑定到指定 checkpoint 的 diff
  *   POST   /api/sessions            — 创建新会话
@@ -38,7 +40,8 @@ import {
   createSessionBranch,
   SessionBranchingError,
 } from '../../utils/sessionBranching.js'
-import { registerFilesystemAccessRoot } from '../services/filesystemAccessRoots.js'
+import { registerChangedFileAccessRoot, registerFilesystemAccessRoot } from '../services/filesystemAccessRoots.js'
+import { traceCaptureService, trimTraceCallPreviews } from '../services/traceCaptureService.js'
 
 const workspaceService = new WorkspaceService(
   async (sessionId) => (
@@ -108,6 +111,18 @@ export async function handleSessionsApi(
         )
       }
       return await getSessionMessages(sessionId)
+    }
+
+    if (subResource === 'trace') {
+      if (req.method !== 'GET') {
+        return Response.json(
+          { error: 'METHOD_NOT_ALLOWED', message: `Method ${req.method} not allowed` },
+          { status: 405 }
+        )
+      }
+      return segments[4] === 'calls'
+        ? await getSessionTraceCall(sessionId, segments[5])
+        : await getSessionTrace(sessionId)
     }
 
     if (subResource === 'git-info') {
@@ -250,6 +265,37 @@ async function getSessionMessages(sessionId: string): Promise<Response> {
   return Response.json({ messages, taskNotifications })
 }
 
+async function getSessionTrace(sessionId: string): Promise<Response> {
+  const [trace, session] = await Promise.all([
+    traceCaptureService.getSessionTrace(sessionId),
+    sessionService.getSession(sessionId).catch(() => null),
+  ])
+  return Response.json({
+    ...trace,
+    calls: trace.calls.map((call) => trimTraceCallPreviews(call)),
+    session: session
+      ? {
+          id: session.id,
+          title: session.title,
+          projectPath: session.projectPath,
+          workDir: session.workDir,
+        }
+      : null,
+  })
+}
+
+async function getSessionTraceCall(sessionId: string, callId: string | undefined): Promise<Response> {
+  if (!callId || callId.trim().length === 0) {
+    throw ApiError.badRequest('callId is required')
+  }
+
+  const call = await traceCaptureService.getSessionTraceCall(sessionId, callId)
+  if (!call) {
+    throw ApiError.notFound(`Trace call not found: ${callId}`)
+  }
+  return Response.json({ call })
+}
+
 async function handleSessionWorkspaceRoute(
   sessionId: string,
   url: URL,
@@ -281,15 +327,19 @@ async function handleSessionWorkspaceRoute(
 }
 
 async function createSession(req: Request): Promise<Response> {
-  let body: { workDir?: string; repository?: CreateSessionRepositoryOptions }
+  let body: { workDir?: string; repository?: CreateSessionRepositoryOptions; permissionMode?: string }
   try {
-    body = (await req.json()) as { workDir?: string; repository?: CreateSessionRepositoryOptions }
+    body = (await req.json()) as { workDir?: string; repository?: CreateSessionRepositoryOptions; permissionMode?: string }
   } catch {
     throw ApiError.badRequest('Invalid JSON body')
   }
 
   if (body.workDir && typeof body.workDir !== 'string') {
     throw ApiError.badRequest('workDir must be a string')
+  }
+
+  if (body.permissionMode !== undefined && typeof body.permissionMode !== 'string') {
+    throw ApiError.badRequest('permissionMode must be a string')
   }
 
   if (body.repository !== undefined) {
@@ -304,7 +354,7 @@ async function createSession(req: Request): Promise<Response> {
     }
   }
 
-  const result = await sessionService.createSession(body.workDir, body.repository)
+  const result = await sessionService.createSession(body.workDir, body.repository, body.permissionMode)
   recentProjectsCache = null
   return Response.json(result, { status: 201 })
 }
@@ -499,6 +549,10 @@ async function getSessionInspection(sessionId: string, url: URL): Promise<Respon
   }
 
   const active = conversationService.hasSession(sessionId)
+  const launchInfo = await sessionService.getSessionLaunchInfo(sessionId).catch(() => null)
+  const permissionMode = active
+    ? conversationService.getSessionPermissionMode(sessionId)
+    : launchInfo?.permissionMode ?? 'default'
   const initMessage = conversationService.getSessionInitMessage(sessionId) ??
     [...conversationService.getRecentSdkMessages(sessionId)]
     .reverse()
@@ -518,7 +572,7 @@ async function getSessionInspection(sessionId: string, url: URL): Promise<Respon
     status: {
       sessionId,
       workDir,
-      permissionMode: conversationService.getSessionPermissionMode(sessionId),
+      permissionMode,
       version: typeof initMessage?.claude_code_version === 'string' ? initMessage.claude_code_version : transcriptMetadata?.version,
       cwd: typeof initMessage?.cwd === 'string' ? initMessage.cwd : transcriptMetadata?.cwd ?? workDir,
       model: typeof initMessage?.model === 'string' ? initMessage.model : transcriptMetadata?.model,
@@ -797,6 +851,14 @@ async function branchSession(req: Request, sessionId: string): Promise<Response>
 
 async function getTurnCheckpoints(sessionId: string): Promise<Response> {
   const checkpoints = await listSessionTurnCheckpoints(sessionId)
+  // Make this turn's real changed files previewable even when they live outside
+  // the session workdir (e.g. the user told the model to write to an absolute
+  // path on another drive). Writing them was authorized, so previewing is too.
+  for (const checkpoint of checkpoints) {
+    for (const filePath of checkpoint.code.filesChanged) {
+      registerChangedFileAccessRoot(filePath, checkpoint.workDir)
+    }
+  }
   return Response.json({ checkpoints })
 }
 
@@ -876,13 +938,14 @@ function isDesktopWorktreeBranchName(branch: string | null): boolean {
 
 async function getRecentProjects(url: URL): Promise<Response> {
   const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '10', 10) || 10, 1), 500)
+  const sessionScanLimit = Math.min(Math.max(limit * 8, 50), 200)
 
   // Return cached response if fresh
   if (recentProjectsCache && Date.now() - recentProjectsCache.timestamp < RECENT_PROJECTS_CACHE_TTL) {
     return Response.json({ projects: recentProjectsCache.projects.slice(0, limit) })
   }
 
-  const { sessions } = await sessionService.listSessions({ limit: 200 })
+  const { sessions } = await sessionService.listSessions({ limit: sessionScanLimit })
   const validSessions = sessions.filter((session) => session.workDirExists && session.workDir)
 
   // First pass: group by logical project root so worktrees stay under the same project.

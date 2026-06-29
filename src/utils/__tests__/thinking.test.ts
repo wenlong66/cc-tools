@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { get3PModelCapabilityOverride } from '../model/modelSupportOverrides.js'
 import { resolveSideQueryThinkingConfig } from '../sideQuery.js'
+import { modelSupportsEffort, modelSupportsMaxEffort } from '../effort.js'
 import {
   modelSupportsAdaptiveThinking,
   modelSupportsThinking,
@@ -87,17 +88,30 @@ describe('provider-aware thinking support', () => {
 
     expect(modelSupportsThinking('deepseek-v4-pro')).toBe(true)
     expect(modelSupportsAdaptiveThinking('deepseek-v4-pro')).toBe(true)
+    expect(modelSupportsEffort('deepseek-v4-pro')).toBe(true)
+    expect(modelSupportsMaxEffort('deepseek-v4-pro')).toBe(true)
     expect(shouldSendExplicitDisabledThinking()).toBe(false)
   })
 
   test('MiniMax preset models declare thinking support without effort passthrough', () => {
     process.env.ANTHROPIC_BASE_URL = 'https://api.minimaxi.com/anthropic'
-    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'MiniMax-M2.7'
+    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'MiniMax-M3'
     delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES
     clearCapabilityCache()
 
-    expect(modelSupportsThinking('MiniMax-M2.7')).toBe(true)
-    expect(modelSupportsAdaptiveThinking('MiniMax-M2.7')).toBe(false)
+    expect(modelSupportsThinking('MiniMax-M3')).toBe(true)
+    expect(modelSupportsAdaptiveThinking('MiniMax-M3')).toBe(false)
+    expect(modelSupportsEffort('MiniMax-M3')).toBe(false)
+    expect(modelSupportsMaxEffort('MiniMax-M3')).toBe(false)
+  })
+
+  test('third-party base URLs do not default unknown model names to effort support', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://api.moonshot.cn/anthropic'
+    delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES
+    clearCapabilityCache()
+
+    expect(modelSupportsEffort('kimi-k2.6')).toBe(false)
+    expect(modelSupportsMaxEffort('kimi-k2.6')).toBe(false)
   })
 
   test('side queries inherit explicit disabled thinking for opted-in providers', () => {

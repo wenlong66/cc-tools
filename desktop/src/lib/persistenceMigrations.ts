@@ -7,7 +7,7 @@ import {
 } from './appZoom'
 
 export const CURRENT_DESKTOP_PERSISTENCE_SCHEMA_VERSION = 1
-export const DESKTOP_PERSISTENCE_VERSION_KEY = 'cc-tools.persistence.schemaVersion'
+export const DESKTOP_PERSISTENCE_VERSION_KEY = 'cc-haha.persistence.schemaVersion'
 
 type DesktopMigrationReport = {
   migratedKeys: string[]
@@ -15,10 +15,11 @@ type DesktopMigrationReport = {
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
-const TAB_STORAGE_KEY = 'cc-tools-open-tabs'
-const SESSION_RUNTIME_STORAGE_KEY = 'cc-tools-session-runtime'
-const THEME_STORAGE_KEY = 'cc-tools-theme'
-const LOCALE_STORAGE_KEY = 'cc-tools-locale'
+const TAB_STORAGE_KEY = 'cc-haha-open-tabs'
+const SESSION_RUNTIME_STORAGE_KEY = 'cc-haha-session-runtime'
+const THEME_STORAGE_KEY = 'cc-haha-theme'
+const LOCALE_STORAGE_KEY = 'cc-haha-locale'
+const EFFORT_LEVELS = ['low', 'medium', 'high', 'max']
 
 function readJson(storage: StorageLike, key: string): unknown {
   const raw = storage.getItem(key)
@@ -88,7 +89,14 @@ function migrateSessionRuntime(storage: StorageLike, report: DesktopMigrationRep
       Object.entries(parsed).filter(([, selection]) => (
         isRecord(selection) &&
         typeof selection.modelId === 'string' &&
-        (selection.providerId === null || typeof selection.providerId === 'string')
+        (selection.providerId === null || typeof selection.providerId === 'string') &&
+        (
+          selection.effortLevel === undefined ||
+          (
+            typeof selection.effortLevel === 'string' &&
+            EFFORT_LEVELS.includes(selection.effortLevel)
+          )
+        )
       )),
     )
 
