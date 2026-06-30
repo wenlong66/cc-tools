@@ -60,6 +60,11 @@ export class HahaOAuthService {
   private sessions = new Map<string, OAuthSession>()
   private refreshFn: RefreshFn = refreshOAuthToken
   private fetchProfileFn: FetchProfileFn = fetchProfileInfo
+  private storageDir: string
+
+  constructor(options: { storageDir?: string } = {}) {
+    this.storageDir = options.storageDir ?? 'cc-haha'
+  }
 
   setRefreshFn(fn: RefreshFn): void {
     this.refreshFn = fn
@@ -72,7 +77,7 @@ export class HahaOAuthService {
   private getOAuthFilePath(): string {
     const configDir =
       process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
-    return path.join(configDir, 'cc-haha', 'oauth.json')
+    return path.join(configDir, this.storageDir, 'oauth.json')
   }
 
   async loadTokens(): Promise<StoredOAuthTokens | null> {

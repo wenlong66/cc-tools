@@ -69,8 +69,8 @@ const DATE_LOCALES: Record<Locale, string> = {
   kr: 'ko-KR',
 }
 const DEFAULT_PROFILE: DesktopProfilePreferences = {
-  displayName: 'cc-haha',
-  subtitle: 'github.com/NanmiCoder/cc-haha',
+  displayName: 'CC-Tools',
+  subtitle: 'github.com/wenlong66/cc-tools',
   avatarFile: null,
   avatarUpdatedAt: null,
 }

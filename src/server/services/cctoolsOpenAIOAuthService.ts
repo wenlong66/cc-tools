@@ -1,13 +1,13 @@
-import { 
-  StoredOpenAIOAuthTokens, 
-  OpenAIOAuthSession,
-  getCCToolsOpenAIOAuthFilePath,
-  CCToolsOpenAIOAuthService,
-  cctoolsOpenAIOAuthService,
+import {
+  type StoredOpenAIOAuthTokens,
+  type OpenAIOAuthSession,
+  getHahaOpenAIOAuthFilePath,
+  HahaOpenAIOAuthService,
+  hahaOpenAIOAuthService,
 } from './hahaOpenAIOAuthService'
 
 export { type StoredOpenAIOAuthTokens }
 export { type OpenAIOAuthSession }
-export { getCCToolsOpenAIOAuthFilePath }
-export { CCToolsOpenAIOAuthService }
-export { cctoolsOpenAIOAuthService }
+export { getHahaOpenAIOAuthFilePath as getCCToolsOpenAIOAuthFilePath }
+export { HahaOpenAIOAuthService as CCToolsOpenAIOAuthService }
+export { hahaOpenAIOAuthService as cctoolsOpenAIOAuthService }

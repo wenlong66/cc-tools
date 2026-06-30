@@ -37,8 +37,8 @@ xattr -cr /Applications/Claude\ Code\ CC-Tools.app
 AppImage：
 
 ```bash
-chmod +x Claude-Code-Haha-<版本>-linux-x86_64.AppImage
-./Claude-Code-Haha-<版本>-linux-x86_64.AppImage
+chmod +x CC-Tools-<版本>-linux-x86_64.AppImage
+./CC-Tools-<版本>-linux-x86_64.AppImage
 ```
 
 > 提示缺少 FUSE：Ubuntu 22.04 及更早 `sudo apt install libfuse2`，24.04+ `sudo apt install libfuse2t64`。
@@ -46,7 +46,7 @@ chmod +x Claude-Code-Haha-<版本>-linux-x86_64.AppImage
 deb：
 
 ```bash
-sudo apt install ./Claude-Code-Haha-<版本>-linux-amd64.deb
+sudo apt install ./CC-Tools-<版本>-linux-amd64.deb
 ```
 
 ## Web UI 模式
