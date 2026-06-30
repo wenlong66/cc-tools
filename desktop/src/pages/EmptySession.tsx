@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../api/client'
+import { agentsApi } from '../api/agents'
 import { skillsApi } from '../api/skills'
 import { useTranslation } from '../i18n'
 import { useSessionStore } from '../stores/sessionStore'
@@ -18,15 +19,19 @@ import { ContextUsageIndicator } from '../components/chat/ContextUsageIndicator'
 import { FileSearchMenu, type FileSearchMenuHandle } from '../components/chat/FileSearchMenu'
 import { LocalSlashCommandPanel, type LocalSlashCommandName } from '../components/chat/LocalSlashCommandPanel'
 import { useMobileViewport } from '../hooks/useMobileViewport'
-import { isTauriRuntime } from '../lib/desktopRuntime'
+import { isDesktopRuntime } from '../lib/desktopRuntime'
+import { publicAssetPath } from '../lib/publicAsset'
 import {
   filesToComposerAttachments,
   selectNativeFileAttachments,
   type ComposerAttachment,
 } from '../lib/composerAttachments'
 import { useComposerFileDrop } from '../components/chat/useComposerFileDrop'
+import { shouldSubmitOnEnter } from '../components/chat/sendShortcut'
 import {
-  FALLBACK_SLASH_COMMANDS,
+  appendAgentSlashCommands,
+  buildAgentSlashCommands,
+  getLocalizedFallbackCommands,
   filterSlashCommands,
   findSlashToken,
   insertSlashTrigger,
@@ -35,6 +40,7 @@ import {
   resolveSlashUiAction,
 } from '../components/chat/composerUtils'
 import type { AttachmentRef } from '../types/chat'
+import type { PermissionMode } from '../types/settings'
 import type { SlashCommandOption } from '../components/chat/composerUtils'
 
 type Attachment = ComposerAttachment
@@ -95,6 +101,7 @@ export function EmptySession() {
   const [slashFilter, setSlashFilter] = useState('')
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0)
   const [slashCommands, setSlashCommands] = useState<SlashCommandOption[]>([])
+  const [agentSlashCommands, setAgentSlashCommands] = useState<SlashCommandOption[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -108,13 +115,16 @@ export function EmptySession() {
   const setActiveView = useUIStore((state) => state.setActiveView)
   const addToast = useUIStore((state) => state.addToast)
   const currentModel = useSettingsStore((state) => state.currentModel)
+  const chatSendBehavior = useSettingsStore((state) => state.chatSendBehavior)
+  const defaultPermissionMode = useSettingsStore((state) => state.permissionMode)
+  const [draftPermissionMode, setDraftPermissionMode] = useState<PermissionMode>(defaultPermissionMode)
   const lastPluginReloadSummary = usePluginStore((state) => state.lastReloadSummary)
   const draftRuntimeSelection = useSessionRuntimeStore((state) => state.selections[DRAFT_RUNTIME_SELECTION_KEY])
   const draftRuntimeSelectionKey = draftRuntimeSelection
-    ? `${draftRuntimeSelection.providerId ?? 'official'}:${draftRuntimeSelection.modelId}`
+    ? `${draftRuntimeSelection.providerId ?? 'official'}:${draftRuntimeSelection.modelId}:${draftRuntimeSelection.effortLevel ?? 'auto'}`
     : undefined
   const draftModelLabel = draftRuntimeSelection?.modelId ?? currentModel?.name ?? currentModel?.id
-  const isMobileComposer = useMobileViewport() && !isTauriRuntime()
+  const isMobileComposer = useMobileViewport() && !isDesktopRuntime()
 
   useEffect(() => {
     textareaRef.current?.focus()
@@ -183,7 +193,9 @@ export function EmptySession() {
   useEffect(() => {
     let cancelled = false
 
-    skillsApi.list(workDir || undefined)
+    const cwd = workDir || undefined
+
+    skillsApi.list(cwd)
       .then(({ skills }) => {
         if (cancelled) return
         setSlashCommands(
@@ -206,9 +218,32 @@ export function EmptySession() {
     }
   }, [workDir, lastPluginReloadSummary])
 
+  useEffect(() => {
+    let cancelled = false
+    const cwd = workDir || undefined
+
+    agentsApi.list(cwd)
+      .then(({ activeAgents }) => {
+        if (cancelled) return
+        setAgentSlashCommands(buildAgentSlashCommands(activeAgents))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAgentSlashCommands([])
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [workDir, lastPluginReloadSummary])
+
   const allSlashCommands = useMemo(
-    () => mergeSlashCommands(slashCommands, FALLBACK_SLASH_COMMANDS),
-    [slashCommands],
+    () => appendAgentSlashCommands(
+      mergeSlashCommands(slashCommands, getLocalizedFallbackCommands(t)),
+      agentSlashCommands,
+    ),
+    [agentSlashCommands, slashCommands, t],
   )
 
   const handleWorkDirChange = (newWorkDir: string) => {
@@ -273,9 +308,12 @@ export function EmptySession() {
       const explicitDraftSelection = useSessionRuntimeStore.getState().selections[DRAFT_RUNTIME_SELECTION_KEY]
       const sessionId = await createSession(
         workDir || undefined,
-        selectedBranch
-          ? { repository: { branch: selectedBranch, worktree: useWorktree } }
-          : undefined,
+        {
+          ...(selectedBranch
+            ? { repository: { branch: selectedBranch, worktree: useWorktree } }
+            : {}),
+          permissionMode: draftPermissionMode,
+        },
       )
       if (explicitDraftSelection) {
         useSessionRuntimeStore.getState().setSelection(sessionId, explicitDraftSelection)
@@ -377,17 +415,19 @@ export function EmptySession() {
         return
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
+        const selected = filteredCommands[slashSelectedIndex]
         if (
           event.key === 'Enter' &&
           exactSlashCommand &&
-          slashFilter.trim().toLowerCase() === exactSlashCommand.name.toLowerCase()
+          selected?.name.toLowerCase() === exactSlashCommand.name.toLowerCase() &&
+          slashFilter.trim().toLowerCase() === exactSlashCommand.name.toLowerCase() &&
+          shouldSubmitOnEnter(event, chatSendBehavior)
         ) {
           event.preventDefault()
           void handleSubmit()
           return
         }
         event.preventDefault()
-        const selected = filteredCommands[slashSelectedIndex]
         if (selected) selectSlashCommand(selected.name)
         return
       }
@@ -398,7 +438,7 @@ export function EmptySession() {
       }
     }
 
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (shouldSubmitOnEnter(event, chatSendBehavior)) {
       event.preventDefault()
       handleSubmit()
     }
@@ -463,9 +503,9 @@ export function EmptySession() {
   })
 
   const openAttachmentPicker = useCallback(() => {
-    if (!isTauriRuntime()) {
+    setPlusMenuOpen(false)
+    if (!isDesktopRuntime()) {
       fileInputRef.current?.click()
-      setPlusMenuOpen(false)
       return
     }
 
@@ -479,7 +519,6 @@ export function EmptySession() {
         }
         fileInputRef.current?.click()
       })
-      .finally(() => setPlusMenuOpen(false))
   }, [])
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -531,7 +570,7 @@ export function EmptySession() {
           isMobileComposer ? 'max-w-[300px]' : 'max-w-md'
         }`}>
           <img
-            src="/app-icon.png"
+            src={publicAssetPath('app-icon.png')}
             alt="CC-Tools"
             className={isMobileComposer ? 'mb-4 h-16 w-16' : 'mb-6 h-24 w-24'}
           />
@@ -728,7 +767,12 @@ export function EmptySession() {
                     )}
                   </div>
 
-                  <PermissionModeSelector workDir={workDir} compact={isMobileComposer} />
+                  <PermissionModeSelector
+                    workDir={workDir}
+                    compact={isMobileComposer}
+                    value={draftPermissionMode}
+                    onChange={setDraftPermissionMode}
+                  />
                 </div>
 
                 <div className={`${isMobileComposer ? 'flex min-w-0 flex-1 items-center justify-end gap-2' : 'flex items-center gap-3'}`}>

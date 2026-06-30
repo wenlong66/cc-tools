@@ -34,6 +34,7 @@ vi.mock('../../i18n', () => ({
       'sidebar.noMatching': 'No matching sessions',
       'sidebar.sessionListFailed': 'Session list failed',
       'sidebar.refreshSessions': 'Refresh sessions',
+      'search.global.trigger': 'Search chats',
       'sidebar.projects': 'Projects',
       'sidebar.projectMenu': 'Project menu',
       'sidebar.newProject': 'New project',
@@ -254,7 +255,8 @@ describe('Sidebar', () => {
       { sessionId: 'session-new-1', title: 'New Session', type: 'session', status: 'idle' },
     ])
     expect(useTabStore.getState().activeTabId).toBe('session-new-1')
-    expect(screen.getByRole('complementary')).not.toHaveAttribute('data-tauri-drag-region')
+    expect(screen.getByRole('complementary')).not.toHaveAttribute('data-desktop-drag-region')
+    expect(screen.getByTestId('sidebar-title-region')).toHaveAttribute('data-desktop-drag-region')
   })
 
   it('groups sessions by project and expands overflow rows', () => {
@@ -281,7 +283,9 @@ describe('Sidebar', () => {
     expect(screen.getByText('beta')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Alpha newest/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Alpha hidden/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Alpha newest/ }).closest('[class*="pl-0"]')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-project-session-list-workspace-alpha').parentElement).toHaveClass('pl-6')
+    expect(screen.getByRole('button', { name: 'Collapse alpha' })).toHaveAttribute('data-state', 'open')
+    expect(screen.getByTestId('sidebar-project-icon-workspace-alpha')).toHaveAttribute('data-icon-state', 'open')
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand display' }))
 
@@ -377,6 +381,8 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('button', { name: /Alpha Session/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Beta Session/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Expand alpha' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand alpha' })).toHaveAttribute('data-state', 'closed')
+    expect(screen.getByTestId('sidebar-project-icon-workspace-alpha')).toHaveAttribute('data-icon-state', 'closed')
   })
 
   it('uses a bounded per-project session scroller for large expanded groups', () => {
@@ -1052,7 +1058,7 @@ describe('Sidebar', () => {
     })
 
     expect(useUIStore.getState().sidebarOpen).toBe(false)
-    expect(screen.queryByPlaceholderText('Search sessions')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Search chats' })).not.toBeInTheDocument()
     expect(screen.getByRole('complementary')).toHaveAttribute('data-state', 'closed')
     expect(screen.getByTestId('sidebar-expand-button')).toHaveClass('sidebar-toggle-button--collapsed')
 
@@ -1061,7 +1067,7 @@ describe('Sidebar', () => {
     })
 
     expect(useUIStore.getState().sidebarOpen).toBe(true)
-    expect(screen.getByPlaceholderText('Search sessions')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Search chats' })).toBeInTheDocument()
     expect(screen.getByRole('complementary')).toHaveAttribute('data-state', 'open')
   })
 
@@ -1070,7 +1076,7 @@ describe('Sidebar', () => {
 
     expect(screen.getByTestId('sidebar-search-controls-section')).toHaveStyle({ overflow: 'visible' })
     expect(screen.getByTestId('sidebar-search-controls-section')).toHaveClass('relative', 'z-20')
-    expect(screen.getByPlaceholderText('Search sessions')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Search chats' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /All projects/i })).not.toBeInTheDocument()
     expect(screen.queryByTestId('project-filter')).not.toBeInTheDocument()
   })

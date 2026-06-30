@@ -4,13 +4,18 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { useUIStore } from '../../stores/uiStore'
 import { useTranslation, type TranslationKey } from '../../i18n'
 import { ConfirmDialog } from '../shared/ConfirmDialog'
+import { GlobalSearchModal } from '../search/GlobalSearchModal'
 import type { SessionListItem } from '../../types/session'
 import { useTabStore, SETTINGS_TAB_ID, SCHEDULED_TAB_ID } from '../../stores/tabStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useOpenTargetStore } from '../../stores/openTargetStore'
 import { desktopUiPreferencesApi, type SidebarProjectPreferences } from '../../api/desktopUiPreferences'
+import { getDesktopHost } from '../../lib/desktopHost'
+import { publicAssetPath } from '../../lib/publicAsset'
 
-const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+const desktopHost = getDesktopHost()
+const isDesktopRuntime = desktopHost.isDesktop
+const canUseNativeDialogs = desktopHost.capabilities.dialogs
 const isWindows = typeof navigator !== 'undefined' && /Win/.test(navigator.platform)
 const SESSION_LIST_AUTO_REFRESH_MS = 30_000
 const SESSION_LIST_FOCUS_REFRESH_MIN_MS = 5_000
@@ -58,12 +63,14 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
   const addToast = useUIStore((s) => s.addToast)
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const activeModal = useUIStore((s) => s.activeModal)
+  const openModal = useUIStore((s) => s.openModal)
+  const closeModal = useUIStore((s) => s.closeModal)
   const activeTabId = useTabStore((s) => s.activeTabId)
   const tabs = useTabStore((s) => s.tabs)
   const chatSessions = useChatStore((s) => s.sessions)
   const closeTab = useTabStore((s) => s.closeTab)
   const disconnectSession = useChatStore((s) => s.disconnectSession)
-  const [searchQuery, setSearchQuery] = useState('')
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [projectContextMenu, setProjectContextMenu] = useState<{ key: string; x: number; y: number } | null>(null)
   const [projectHeaderMenu, setProjectHeaderMenu] = useState<{ type: SidebarHeaderMenuType; x: number; y: number } | null>(null)
@@ -105,14 +112,8 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
     return () => document.removeEventListener('click', close)
   }, [contextMenu, projectContextMenu, projectHeaderMenu, projectHeaderSubmenu])
 
-  const filteredSessions = useMemo(() => {
-    let result = sessions
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      result = result.filter((s) => s.title.toLowerCase().includes(q))
-    }
-    return result
-  }, [sessions, searchQuery])
+  // Title filtering moved into the global search modal (Cmd+K); the list shows all sessions.
+  const filteredSessions = sessions
 
   const projectGroups = useMemo(() => groupByProject(filteredSessions, projectSortBy), [filteredSessions, projectSortBy])
   const orderedProjectGroups = useMemo(
@@ -345,7 +346,7 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
   const createSessionFromExistingFolder = useCallback(async () => {
     setProjectHeaderMenu(null)
     setProjectHeaderSubmenu(null)
-    if (!isTauri) {
+    if (!canUseNativeDialogs) {
       addToast({
         type: 'error',
         message: t('sidebar.chooseProjectFolderUnavailable'),
@@ -353,8 +354,7 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
       return
     }
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog')
-      const selected = await open({
+      const selected = await getDesktopHost().dialogs.open({
         directory: true,
         multiple: false,
         title: t('sidebar.useExistingFolder'),
@@ -571,24 +571,6 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
     setRenameValue('')
   }, [renamingId, renameValue, renameSession])
 
-  const startDraggingRef = useRef<(() => Promise<void>) | null>(null)
-
-  useEffect(() => {
-    if (!isTauri) return
-    import('@tauri-apps/api/window')
-      .then(({ getCurrentWindow }) => {
-        const win = getCurrentWindow()
-        startDraggingRef.current = () => win.startDragging()
-      })
-      .catch(() => {})
-  }, [])
-
-  const handleSidebarDrag = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return
-    if ((e.target as HTMLElement).closest('button, input, textarea, select, a, [role="button"]')) return
-    startDraggingRef.current?.()
-  }, [])
-
   useEffect(() => {
     if (!isBatchMode) return
 
@@ -612,20 +594,23 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
 
   return (
     <aside
-      onMouseDown={handleSidebarDrag}
       className="sidebar-panel relative h-full flex flex-col bg-[var(--color-surface-sidebar)] border-r border-[var(--color-border)] select-none"
       data-state={expanded ? 'open' : 'closed'}
       aria-label="Sidebar"
     >
-      <div className={`px-3 pb-2 ${isTauri && !isWindows ? 'pt-[44px]' : 'pt-3'}`}>
+      <div
+        data-testid="sidebar-title-region"
+        data-desktop-drag-region
+        className={`px-3 pb-2 ${isDesktopRuntime && !isWindows ? 'pt-[44px]' : 'pt-3'}`}
+      >
         <div className={`flex ${expanded ? 'items-center justify-between gap-3' : 'flex-col items-center gap-2'}`}>
           <div className={`flex min-w-0 items-center ${expanded ? 'gap-2.5' : 'justify-center'}`}>
-            <img src="/app-icon.png" alt="" className="h-8 w-8 flex-shrink-0" />
+            <img src={publicAssetPath('app-icon.png')} alt="" className="h-8 w-8 flex-shrink-0" />
             <span
               className={`sidebar-copy ${expanded ? 'sidebar-copy--visible' : 'sidebar-copy--hidden'} text-[13px] font-semibold tracking-tight text-[var(--color-text-primary)]`}
               style={{ fontFamily: 'var(--font-headline)' }}
             >
-              Claude Code <span className="text-[var(--color-primary-container)]">CC-Tools</span>
+              CC-Tools
             </span>
           </div>
           <div className={`flex items-center ${expanded ? 'gap-1.5' : 'flex-col gap-2'}`}>
@@ -708,19 +693,19 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
             style={{ overflow: 'visible' }}
           >
             <div className="flex items-center gap-1.5">
-              <div className="flex h-9 min-w-0 flex-1 items-center rounded-[14px] border border-[var(--color-sidebar-search-border)] bg-[var(--color-sidebar-search-bg)] pl-3 pr-3 transition-colors focus-within:border-[var(--color-border-focus)]">
+              <button
+                type="button"
+                onClick={() => openModal('globalSearch')}
+                className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-[var(--color-sidebar-search-border)] bg-[var(--color-sidebar-search-bg)] pl-3 pr-2 text-left text-[13px] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-sidebar-item-hover)] focus-visible:border-[var(--color-border-focus)] focus-visible:outline-none"
+                aria-label={t('search.global.trigger')}
+                title={t('search.global.trigger')}
+              >
                 <span className="pointer-events-none flex shrink-0 items-center text-[var(--color-text-tertiary)]">
                   <SearchIcon />
                 </span>
-                <input
-                  id="sidebar-search"
-                  type="text"
-                  placeholder={t('sidebar.searchPlaceholder')}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="min-w-0 flex-1 bg-transparent pl-2 pr-0 text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none"
-                />
-              </div>
+                <span className="min-w-0 flex-1 truncate pl-2">{t('search.global.trigger')}</span>
+                <kbd className="pointer-events-none shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-1 font-mono text-[10px] leading-tight text-[var(--color-text-tertiary)]">⌘K</kbd>
+              </button>
               <button
                 type="button"
                 onClick={() => void refreshSessionsNow()}
@@ -816,7 +801,7 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
                 </div>
               ) : filteredSessions.length === 0 && (
                 <div className="px-3 py-4 text-center text-xs text-[var(--color-text-tertiary)]">
-                  {searchQuery ? t('sidebar.noMatching') : t('sidebar.noSessions')}
+                  {t('sidebar.noSessions')}
                 </div>
               )}
               {orderedProjectGroups.length > 0 && (
@@ -865,15 +850,32 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
                         onDragStart={(event) => handleProjectDragStart(event, project.key)}
                         onDragEnd={clearProjectDragState}
                         onClick={() => toggleProjectCollapsed(project.key)}
-                        className="flex min-w-0 flex-1 cursor-grab items-center gap-2 rounded-xl px-1.5 py-2 text-left transition-colors active:cursor-grabbing hover:bg-[var(--color-sidebar-item-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]"
+                        data-state={projectCollapsed ? 'closed' : 'open'}
+                        className="flex min-w-0 flex-1 cursor-grab items-center gap-2 rounded-xl px-1.5 py-2 text-left transition-[background,color] active:cursor-grabbing hover:bg-[var(--color-sidebar-item-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]"
                         aria-expanded={!projectCollapsed}
                         aria-label={t(projectCollapsed ? 'sidebar.expandProject' : 'sidebar.collapseProject', { project: project.title })}
                         title={project.subtitle || project.title}
                       >
-                        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-[var(--color-text-primary)]">
-                          <Folder className="h-[18px] w-[18px]" strokeWidth={1.9} aria-hidden="true" />
+                        <span
+                          data-testid={`sidebar-project-icon-${domSafeProjectKey(project.key)}`}
+                          data-icon-state={projectCollapsed ? 'closed' : 'open'}
+                          className={`flex h-5 w-5 flex-shrink-0 items-center justify-center transition-colors ${
+                            projectCollapsed
+                              ? 'text-[var(--color-text-secondary)]'
+                              : 'text-[var(--color-text-primary)]'
+                          }`}
+                        >
+                          {projectCollapsed ? (
+                            <Folder className="h-[18px] w-[18px]" strokeWidth={1.9} aria-hidden="true" />
+                          ) : (
+                            <FolderOpen className="h-[18px] w-[18px]" strokeWidth={1.9} aria-hidden="true" />
+                          )}
                         </span>
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-5 text-[var(--color-text-primary)]">
+                        <span className={`min-w-0 flex-1 truncate text-[13px] font-semibold leading-5 transition-colors ${
+                          projectCollapsed
+                            ? 'text-[var(--color-text-secondary)]'
+                            : 'text-[var(--color-text-primary)]'
+                        }`}>
                           {project.title}
                         </span>
                         {isProjectPinned && (
@@ -929,7 +931,7 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
                       </div>
                     </div>
                     {!projectCollapsed && (
-                      <div className="mt-0.5 pl-0">
+                      <div className="mt-0.5 pl-6">
                         <div
                           className={hasInternalScroll ? 'max-h-[420px] overflow-y-auto pr-1' : undefined}
                           data-testid={`sidebar-project-session-list-${domSafeProjectKey(project.key)}`}
@@ -1200,6 +1202,8 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
         confirmVariant="danger"
         loading={isBatchDeleting}
       />
+
+      <GlobalSearchModal open={activeModal === 'globalSearch'} onClose={closeModal} />
     </aside>
   )
 }

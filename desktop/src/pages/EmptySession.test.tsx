@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getMessages: vi.fn(),
   getSlashCommands: vi.fn(),
   listSkills: vi.fn(),
+  listAgents: vi.fn(),
   search: vi.fn(),
   browse: vi.fn(),
   getTasksForList: vi.fn(),
@@ -38,6 +39,12 @@ vi.mock('../api/sessions', () => ({
 vi.mock('../api/skills', () => ({
   skillsApi: {
     list: mocks.listSkills,
+  },
+}))
+
+vi.mock('../api/agents', () => ({
+  agentsApi: {
+    list: mocks.listAgents,
   },
 }))
 
@@ -71,6 +78,7 @@ vi.mock('../hooks/useMobileViewport', () => ({
 
 vi.mock('../lib/desktopRuntime', () => ({
   isTauriRuntime: () => mocks.isTauriRuntime,
+  isDesktopRuntime: () => mocks.isTauriRuntime,
 }))
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -174,7 +182,7 @@ describe('EmptySession', () => {
     mocks.webviewDragHandlers.length = 0
     mocks.isMobile = false
     mocks.isTauriRuntime = false
-    useSettingsStore.setState({ locale: 'en', activeProviderName: null })
+    useSettingsStore.setState({ locale: 'en', activeProviderName: null, permissionMode: 'default' })
     useSessionStore.setState(initialSessionState, true)
     useChatStore.setState(initialChatState, true)
     useTabStore.setState(initialTabState, true)
@@ -200,6 +208,7 @@ describe('EmptySession', () => {
     mocks.getMessages.mockResolvedValue({ messages: [] })
     mocks.getSlashCommands.mockResolvedValue({ commands: [] })
     mocks.listSkills.mockResolvedValue({ skills: [] })
+    mocks.listAgents.mockResolvedValue({ activeAgents: [], allAgents: [] })
     mocks.search.mockResolvedValue({
       currentPath: '/workspace/project',
       parentPath: null,
@@ -212,6 +221,7 @@ describe('EmptySession', () => {
 
   afterEach(() => {
     cleanup()
+    Reflect.deleteProperty(window, 'desktopHost')
     useSessionStore.setState(initialSessionState, true)
     useChatStore.setState(initialChatState, true)
     useTabStore.setState(initialTabState, true)
@@ -312,6 +322,74 @@ describe('EmptySession', () => {
     })
   })
 
+  it('offers active agents as slash entries that insert /agent with the selected type', async () => {
+    mocks.listAgents.mockResolvedValue({
+      activeAgents: [
+        {
+          agentType: 'debugger',
+          description: 'Debug failures',
+          modelDisplay: 'OPUS',
+          source: 'userSettings',
+          isActive: true,
+        },
+      ],
+      allAgents: [],
+    })
+
+    render(<EmptySession />)
+
+    await waitFor(() => {
+      expect(mocks.listAgents).toHaveBeenCalledWith(undefined)
+    })
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: { value: '/debug', selectionStart: 6 },
+    })
+
+    const agentOption = await screen.findByText('/agent debugger')
+    fireEvent.click(agentOption)
+
+    expect(input).toHaveValue('/agent debugger ')
+  })
+
+  it('selects a highlighted agent entry from /agent without creating a session', async () => {
+    useSettingsStore.setState({
+      chatSendBehavior: 'enter',
+    })
+    mocks.listAgents.mockResolvedValue({
+      activeAgents: [
+        {
+          agentType: 'debugger',
+          description: 'Debug failures',
+          modelDisplay: 'OPUS',
+          source: 'userSettings',
+          isActive: true,
+        },
+      ],
+      allAgents: [],
+    })
+
+    render(<EmptySession />)
+
+    await waitFor(() => {
+      expect(mocks.listAgents).toHaveBeenCalledWith(undefined)
+    })
+
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, {
+      target: { value: '/agent', selectionStart: 6 },
+    })
+
+    await screen.findByText('/agent debugger')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(input).toHaveValue('/agent debugger ')
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(mocks.wsSend).not.toHaveBeenCalled()
+  })
+
   it('integrates repository launch controls into the desktop composer panel', async () => {
     render(<EmptySession />)
 
@@ -354,6 +432,7 @@ describe('EmptySession', () => {
       expect(mocks.createSession).toHaveBeenCalledWith({
         workDir: '/workspace/project',
         repository: { branch: 'main', worktree: false },
+        permissionMode: 'default',
       })
     })
 
@@ -394,7 +473,7 @@ describe('EmptySession', () => {
     fireEvent.click(screen.getByRole('button', { name: /Run/i }))
 
     await waitFor(() => {
-      expect(mocks.createSession).toHaveBeenCalledWith({})
+      expect(mocks.createSession).toHaveBeenCalledWith({ permissionMode: 'default' })
     })
 
     expect(useSessionRuntimeStore.getState().selections['draft-session']).toEqual({
@@ -417,6 +496,27 @@ describe('EmptySession', () => {
 
   it('uses native desktop file paths for draft attachments', async () => {
     mocks.isTauriRuntime = true
+    window.desktopHost = {
+      kind: 'electron',
+      isDesktop: true,
+      capabilities: {
+        appMode: false,
+        dialogs: true,
+        notifications: false,
+        previewWebview: false,
+        shell: false,
+        terminal: false,
+        updates: false,
+        windowControls: false,
+        zoom: false,
+      },
+      dialogs: {
+        open: mocks.dialogOpen,
+      },
+      webview: {
+        onDragDropEvent: vi.fn().mockResolvedValue(mocks.webviewUnlisten),
+      },
+    } as any
     mocks.dialogOpen.mockResolvedValueOnce([
       'C:\\Users\\Nanmi\\Desktop\\huge-a.log',
       '/Users/nanmi/tmp/huge-b.zip',
@@ -436,7 +536,7 @@ describe('EmptySession', () => {
     fireEvent.click(screen.getByRole('button', { name: /Run/i }))
 
     await waitFor(() => {
-      expect(mocks.createSession).toHaveBeenCalledWith({})
+      expect(mocks.createSession).toHaveBeenCalledWith({ permissionMode: 'default' })
     })
     expect(mocks.wsSend).toHaveBeenCalledWith('draft-session', {
       type: 'user_message',
@@ -488,7 +588,7 @@ describe('EmptySession', () => {
     fireEvent.click(screen.getByRole('button', { name: /Run/i }))
 
     await waitFor(() => {
-      expect(mocks.createSession).toHaveBeenCalledWith({})
+      expect(mocks.createSession).toHaveBeenCalledWith({ permissionMode: 'default' })
     })
     expect(mocks.wsSend).toHaveBeenCalledWith('draft-session', {
       type: 'user_message',
@@ -563,6 +663,7 @@ describe('EmptySession', () => {
     await waitFor(() => {
       expect(mocks.createSession).toHaveBeenCalledWith({
         workDir: '/workspace/project',
+        permissionMode: 'default',
       })
     })
   })
@@ -668,6 +769,7 @@ describe('EmptySession', () => {
       expect(mocks.createSession).toHaveBeenCalledWith({
         workDir: '/workspace/project',
         repository: { branch: 'main', worktree: false },
+        permissionMode: 'default',
       })
     })
   })
@@ -759,6 +861,7 @@ describe('EmptySession', () => {
       expect(mocks.createSession).toHaveBeenCalledWith({
         workDir: '/workspace/project',
         repository: { branch: 'main', worktree: false },
+        permissionMode: 'default',
       })
     })
   })

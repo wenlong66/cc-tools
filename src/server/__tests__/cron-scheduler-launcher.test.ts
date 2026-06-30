@@ -5,6 +5,7 @@ import * as path from 'path'
 
 import {
   buildCronCliArgs,
+  buildCronTaskSpawnOptions,
   CronScheduler,
   resolveCronProjectRoot,
 } from '../services/cronScheduler.js'
@@ -22,7 +23,7 @@ const originalClaudeCodeEntrypoint = process.env.CLAUDE_CODE_ENTRYPOINT
 const originalHome = process.env.HOME
 const originalShell = process.env.SHELL
 const originalZdotdir = process.env.ZDOTDIR
-const originalDisableTerminalShellEnv = process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
+const originalDisableTerminalShellEnv = process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
 
 const isWindows = process.platform === 'win32'
 const unixOnly = isWindows ? it.skip : it
@@ -102,9 +103,9 @@ function restoreEnv(): void {
     delete process.env.ZDOTDIR
   }
   if (originalDisableTerminalShellEnv) {
-    process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV = originalDisableTerminalShellEnv
+    process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV = originalDisableTerminalShellEnv
   } else {
-    delete process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
+    delete process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
   }
   resetTerminalShellEnvironmentCacheForTests()
 }
@@ -115,7 +116,7 @@ describe('cron scheduler launcher resolution', () => {
   beforeEach(async () => {
     tmpDir = await createTmpDir()
     process.env.CLAUDE_CONFIG_DIR = path.join(tmpDir, 'config')
-    process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV = '1'
+    process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV = '1'
     resetTerminalShellEnvironmentCacheForTests()
   })
 
@@ -146,7 +147,20 @@ describe('cron scheduler launcher resolution', () => {
     ])
   })
 
-  it('prefers an explicit CC_TOOLS_ROOT when it points at a source checkout', async () => {
+  it('builds hidden CLI spawn options for scheduled task subprocesses', () => {
+    const env = { CLAUDECODE: '1' }
+
+    expect(buildCronTaskSpawnOptions('/workspace/project', env)).toEqual({
+      stdin: 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      cwd: '/workspace/project',
+      env,
+      windowsHide: true,
+    })
+  })
+
+  it('prefers an explicit CC_HAHA_ROOT when it points at a source checkout', async () => {
     const sourceRoot = path.join(tmpDir, 'source')
     await createSourceRoot(sourceRoot)
 
@@ -154,7 +168,7 @@ describe('cron scheduler launcher resolution', () => {
       resolveCronProjectRoot({
         cwd: path.join(tmpDir, 'other'),
         moduleDir: path.join(tmpDir, 'broken', 'src', 'server', 'services'),
-        env: { CC_TOOLS_ROOT: sourceRoot },
+        env: { CC_HAHA_ROOT: sourceRoot },
       }),
     ).toBe(sourceRoot)
   })
@@ -330,6 +344,74 @@ describe('cron scheduler launcher resolution', () => {
     expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('sdk-cli')
   })
 
+  unixOnly('executeTask launches scheduled tasks with full permissions', async () => {
+    const appRoot = path.join(tmpDir, 'app-root')
+    const sidecarPath = path.join(tmpDir, 'claude-sidecar')
+    const sidecarArgsPath = path.join(tmpDir, 'sidecar.args')
+
+    await fs.mkdir(appRoot, { recursive: true })
+    await fs.writeFile(
+      sidecarPath,
+      [
+        '#!/bin/sh',
+        `printf '%s\\n' "$@" > "${sidecarArgsPath}"`,
+        '/bin/cat >/dev/null',
+        'printf \'%s\\n\' \'{"type":"result","result":"permissions ok"}\'',
+        'exit 0',
+        '',
+      ].join('\n'),
+      'utf-8',
+    )
+    await fs.chmod(sidecarPath, 0o755)
+
+    process.env.CLAUDE_CLI_PATH = sidecarPath
+    process.env.CLAUDE_APP_ROOT = appRoot
+
+    const cronService = new CronService()
+    const scheduler = new CronScheduler(cronService)
+    const createSessionCalls: unknown[][] = []
+    const appendSessionMetadataCalls: unknown[][] = []
+    ;(scheduler as unknown as {
+      sessionService: {
+        createSession: (...args: unknown[]) => Promise<{ sessionId: string }>
+        deleteSessionFile: (sessionId: string) => Promise<void>
+        appendSessionMetadata: (...args: unknown[]) => Promise<void>
+      }
+    }).sessionService = {
+      createSession: async (...args: unknown[]) => {
+        createSessionCalls.push(args)
+        return { sessionId: 'scheduled-session' }
+      },
+      deleteSessionFile: async () => {},
+      appendSessionMetadata: async (...args: unknown[]) => {
+        appendSessionMetadataCalls.push(args)
+      },
+    }
+    const task = await cronService.createTask({
+      cron: '* * * * *',
+      prompt: 'cron permission test',
+      name: 'Permission Task',
+      recurring: true,
+      folderPath: tmpDir,
+      permissionMode: 'default',
+    })
+
+    const run = await scheduler.executeTask(task, { createSession: true })
+    const canonicalTmpDir = await fs.realpath(tmpDir)
+
+    expect(run.status).toBe('completed')
+    expect(run.sessionId).toBe('scheduled-session')
+    expect(createSessionCalls).toEqual([[canonicalTmpDir, undefined, 'bypassPermissions']])
+    expect(appendSessionMetadataCalls).toEqual([
+      ['scheduled-session', { workDir: canonicalTmpDir, permissionMode: 'bypassPermissions' }],
+    ])
+    const sidecarArgs = (await fs.readFile(sidecarArgsPath, 'utf-8'))
+      .trim()
+      .split('\n')
+    expect(sidecarArgs).toContain('--dangerously-skip-permissions')
+    expect(sidecarArgs).not.toContain('--permission-mode')
+  })
+
   unixOnly('executeTask inherits exported terminal shell variables', async () => {
     const appRoot = path.join(tmpDir, 'app-root')
     const sidecarPath = path.join(tmpDir, 'claude-sidecar')
@@ -385,7 +467,7 @@ describe('cron scheduler launcher resolution', () => {
     )
     await fs.chmod(sidecarPath, 0o755)
 
-    delete process.env.CC_TOOLS_DISABLE_TERMINAL_SHELL_ENV
+    delete process.env.CC_HAHA_DISABLE_TERMINAL_SHELL_ENV
     process.env.HOME = tmpDir
     process.env.SHELL = shellPath
     process.env.PATH = '/usr/bin:/bin'

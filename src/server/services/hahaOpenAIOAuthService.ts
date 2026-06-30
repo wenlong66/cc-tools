@@ -1,9 +1,9 @@
 /**
- * CCToolsOpenAIOAuthService — 桌面端自管 OpenAI OAuth token
+ * HahaOpenAIOAuthService — 桌面端自管 OpenAI OAuth token
  *
  * 为什么存在: macOS Keychain ACL 在 .app 被打上 quarantine 属性后
  * 对无 UI sidecar 静默拒绝,导致 CLI 读不到 OAuth token → 403。
- * 这个 service 把 token 存到 cctools 自己的目录,并通过 env 注入给 CLI。
+ * 这个 service 把 token 存到 haha 自己的目录,并通过 env 注入给 CLI。
  *
  * 复用 src/services/openaiAuth/client.ts 里的 PKCE + token exchange 逻辑,
  * 不复制粘贴 —— 保证跟 CLI 走同一套协议实现。
@@ -12,6 +12,7 @@
 import * as fs from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
+import { logTokenRefreshFailure } from './oauthRefreshLog.js'
 import { AuthCodeListener } from '../../services/oauth/auth-code-listener.js'
 import {
   buildOpenAIAuthorizeUrl,
@@ -24,8 +25,13 @@ import {
   withRefreshedAccessToken,
   OPENAI_CODEX_REDIRECT_PATH,
   OPENAI_CODEX_OAUTH_PORT,
+  type OpenAITokenFetchOptions,
 } from '../../services/openaiAuth/client.js'
 import type { OpenAIOAuthTokenResponse } from '../../services/openaiAuth/types.js'
+import {
+  getManualNetworkProxyUrl,
+  loadNetworkSettings,
+} from './networkSettings.js'
 
 export type StoredOpenAIOAuthTokens = {
   accessToken: string
@@ -49,6 +55,7 @@ export type OpenAIOAuthSession = {
 
 type OpenAIRefreshFn = (
   refreshToken: string,
+  options?: OpenAITokenFetchOptions,
 ) => Promise<OpenAIOAuthTokenResponse>
 
 const SESSION_TTL_MS = 5 * 60 * 1000
@@ -77,13 +84,13 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;')
 }
 
-export function getCCToolsOpenAIOAuthFilePath(): string {
+export function getHahaOpenAIOAuthFilePath(): string {
   const configDir =
-    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.cc-tools')
-  return path.join(configDir, 'cc-tools', 'openai-oauth.json')
+    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+  return path.join(configDir, 'cc-haha', 'openai-oauth.json')
 }
 
-export class CCToolsOpenAIOAuthService {
+export class HahaOpenAIOAuthService {
   private sessions = new Map<string, OpenAIOAuthSession>()
   private refreshFn: OpenAIRefreshFn = refreshOpenAITokens
   private callbackPort: number
@@ -107,7 +114,7 @@ export class CCToolsOpenAIOAuthService {
   }
 
   getOAuthFilePath(): string {
-    return getCCToolsOpenAIOAuthFilePath()
+    return getHahaOpenAIOAuthFilePath()
   }
 
   async loadTokens(): Promise<StoredOpenAIOAuthTokens | null> {
@@ -250,7 +257,7 @@ export class CCToolsOpenAIOAuthService {
           this.sessions.delete(session.state)
         }
         console.error(
-          '[CCToolsOpenAIOAuthService] OAuth callback listener failed:',
+          '[HahaOpenAIOAuthService] OAuth callback listener failed:',
           err instanceof Error ? err.message : err,
         )
       })
@@ -289,6 +296,7 @@ export class CCToolsOpenAIOAuthService {
       code: authorizationCode,
       redirectUri: session.redirectUri,
       codeVerifier: session.codeVerifier,
+      ...(await this.getOpenAITokenFetchOptions()),
     })
 
     const normalized = normalizeOpenAITokens(response)
@@ -316,7 +324,10 @@ export class CCToolsOpenAIOAuthService {
     if (!tokens.refreshToken) return null
 
     try {
-      const refreshed = await this.refreshFn(tokens.refreshToken)
+      const refreshed = await this.refreshFn(
+        tokens.refreshToken,
+        await this.getOpenAITokenFetchOptions(),
+      )
       const normalized = withRefreshedAccessToken(
         {
           accessToken: tokens.accessToken,
@@ -341,10 +352,7 @@ export class CCToolsOpenAIOAuthService {
       await this.saveTokens(updated)
       return updated
     } catch (err) {
-      console.error(
-        '[CCToolsOpenAIOAuthService] token refresh failed:',
-        err instanceof Error ? err.message : err,
-      )
+      logTokenRefreshFailure('[HahaOpenAIOAuthService]', err)
       return null
     }
   }
@@ -353,6 +361,14 @@ export class CCToolsOpenAIOAuthService {
     const tokens = await this.ensureFreshTokens()
     return tokens?.accessToken ?? null
   }
+
+  private async getOpenAITokenFetchOptions(): Promise<OpenAITokenFetchOptions> {
+    const networkSettings = await loadNetworkSettings()
+    return {
+      proxyUrl: getManualNetworkProxyUrl(networkSettings),
+      timeoutMs: networkSettings.aiRequestTimeoutMs,
+    }
+  }
 }
 
-export const cctoolsOpenAIOAuthService = new CCToolsOpenAIOAuthService()
+export const hahaOpenAIOAuthService = new HahaOpenAIOAuthService()

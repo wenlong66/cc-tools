@@ -221,6 +221,34 @@ function classNameContains(element: Element | null, needle: string) {
   return false
 }
 
+type SvgMeasurementPrototype = SVGElement & {
+  getBBox?: () => { x: number; y: number; width: number; height: number }
+  getComputedTextLength?: () => number
+}
+
+function ensureMermaidSvgMeasurementStubs() {
+  const svgPrototype = SVGElement.prototype as SvgMeasurementPrototype
+
+  if (!svgPrototype.getBBox) {
+    Object.defineProperty(svgPrototype, 'getBBox', {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        width: 120,
+        height: 24,
+      }),
+    })
+  }
+
+  if (!svgPrototype.getComputedTextLength) {
+    Object.defineProperty(svgPrototype, 'getComputedTextLength', {
+      configurable: true,
+      value: () => 96,
+    })
+  }
+}
+
 vi.mock('../../api/sessions', () => ({
   sessionsApi: (() => {
     if (!mocks) {
@@ -241,6 +269,15 @@ vi.mock('../../api/sessions', () => ({
   })(),
 }))
 
+vi.mock('../../api/openTargets', () => ({
+  openTargetsApi: {
+    list: vi.fn().mockResolvedValue({ platform: 'darwin', targets: [], primaryTargetId: null, cachedAt: 0, ttlMs: 60000 }),
+    open: vi.fn().mockResolvedValue({ ok: true, targetId: '', path: '' }),
+  },
+}))
+
+vi.mock('@tauri-apps/plugin-shell', () => ({ open: vi.fn().mockResolvedValue(undefined) }))
+
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useWorkspaceChatContextStore } from '../../stores/workspaceChatContextStore'
@@ -256,6 +293,7 @@ describe('WorkspacePanel', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    ensureMermaidSvgMeasurementStubs()
     await setWorkspaceState(workspaceInitialState)
     useChatStore.setState(chatInitialState, true)
     useWorkspaceChatContextStore.setState(workspaceChatInitialState, true)
@@ -766,6 +804,126 @@ describe('WorkspacePanel', () => {
     expect(view.getAllByText('b.ts').length).toBeGreaterThanOrEqual(1)
   })
 
+  it('keeps the file navigator hidden while previewing until explicitly opened', async () => {
+    await setWorkspaceState((state) => ({
+      ...state,
+      panelBySession: {
+        ...state.panelBySession,
+        'session-preview-focused': {
+          isOpen: true,
+          activeView: 'changed',
+          hasUserSelectedView: true,
+        },
+      },
+      statusBySession: {
+        ...state.statusBySession,
+        'session-preview-focused': {
+          state: 'ok',
+          workDir: '/repo',
+          repoName: 'repo',
+          branch: 'main',
+          isGitRepo: true,
+          changedFiles: [
+            {
+              path: 'src/app.ts',
+              status: 'modified',
+              additions: 4,
+              deletions: 1,
+            },
+          ],
+        },
+      },
+      previewTabsBySession: {
+        ...state.previewTabsBySession,
+        'session-preview-focused': [{
+          id: 'diff:src/app.ts',
+          path: 'src/app.ts',
+          kind: 'diff',
+          title: 'app.ts',
+          diff: '@@ -1 +1 @@\n-old\n+new',
+          state: 'ok',
+        }],
+      },
+      activePreviewTabIdBySession: {
+        ...state.activePreviewTabIdBySession,
+        'session-preview-focused': 'diff:src/app.ts',
+      },
+    }))
+
+    const view = await renderPanel('session-preview-focused')
+
+    expect(view.getByTestId('workspace-code').textContent).toContain('+new')
+    expect(view.queryByRole('button', { name: 'Changed files' })).toBeNull()
+    expect(view.queryByPlaceholderText('Filter files...')).toBeNull()
+
+    await clickElement(view.getByRole('button', { name: 'Show file navigator' }))
+
+    expect(view.getByRole('button', { name: 'Changed files' })).toBeTruthy()
+    expect(view.getByPlaceholderText('Filter files...')).toBeTruthy()
+    expect(view.getByText('src/app.ts')).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Hide file navigator' })).toBeTruthy()
+  })
+
+  it('defers all-files tree loading while the file navigator is hidden behind a preview', async () => {
+    getMocks().getWorkspaceTreeMock.mockResolvedValue({
+      state: 'ok',
+      path: '',
+      entries: [{ name: 'src', path: 'src', isDirectory: true }],
+    })
+
+    await setWorkspaceState((state) => ({
+      ...state,
+      panelBySession: {
+        ...state.panelBySession,
+        'session-preview-hidden-tree': {
+          isOpen: true,
+          activeView: 'all',
+          hasUserSelectedView: true,
+        },
+      },
+      statusBySession: {
+        ...state.statusBySession,
+        'session-preview-hidden-tree': {
+          state: 'ok',
+          workDir: '/repo',
+          repoName: 'repo',
+          branch: 'main',
+          isGitRepo: true,
+          changedFiles: [],
+        },
+      },
+      previewTabsBySession: {
+        ...state.previewTabsBySession,
+        'session-preview-hidden-tree': [{
+          id: 'file:src/app.ts',
+          path: 'src/app.ts',
+          kind: 'file',
+          title: 'app.ts',
+          content: 'export const ready = true',
+          language: 'typescript',
+          state: 'ok',
+          size: 25,
+        }],
+      },
+      activePreviewTabIdBySession: {
+        ...state.activePreviewTabIdBySession,
+        'session-preview-hidden-tree': 'file:src/app.ts',
+      },
+    }))
+
+    const view = await renderPanel('session-preview-hidden-tree')
+    await flushReactWork()
+
+    expect(getMocks().getWorkspaceTreeMock).not.toHaveBeenCalled()
+
+    await clickElement(view.getByRole('button', { name: 'Show file navigator' }))
+
+    await waitFor(() => {
+      expect(getMocks().getWorkspaceTreeMock).toHaveBeenCalledWith('session-preview-hidden-tree', '')
+    })
+    expect(view.getAllByText('src').length).toBeGreaterThanOrEqual(2)
+  })
+
   it('uses theme tokens for the panel, preview tabs, and code surface in dark mode', async () => {
     await setSettingsState({ ...settingsInitialState, locale: 'en', theme: 'dark' })
     await setWorkspaceState((state) => ({
@@ -1060,6 +1218,72 @@ describe('WorkspacePanel', () => {
     expect(view.queryByTestId('workspace-code')).toBeNull()
   })
 
+  it('renders Mermaid diagrams in markdown file previews when labels contain HTML breaks and braces', async () => {
+    await setWorkspaceState((state) => ({
+      ...state,
+      panelBySession: {
+        ...state.panelBySession,
+        'session-markdown-mermaid-preview': {
+          isOpen: true,
+          activeView: 'all',
+        },
+      },
+      statusBySession: {
+        ...state.statusBySession,
+        'session-markdown-mermaid-preview': {
+          state: 'ok',
+          workDir: '/repo',
+          repoName: 'repo',
+          branch: 'main',
+          isGitRepo: true,
+          changedFiles: [],
+        },
+      },
+      previewTabsBySession: {
+        ...state.previewTabsBySession,
+        'session-markdown-mermaid-preview': [{
+          id: 'file:architecture.md',
+          path: 'architecture.md',
+          kind: 'file',
+          title: 'architecture.md',
+          language: 'markdown',
+          content: [
+            '# Architecture',
+            '',
+            '```mermaid',
+            'graph LR',
+            '    subgraph "Yjs CRDT 核心"',
+            '        Y[Yjs Document]',
+            '        A[嵌入类型<br/>Text / Map / Array]',
+            '        I[插入操作<br/>{content, position, clock, clientID}]',
+            '        D[删除操作<br/>{position, length, clock, clientID}]',
+            '        RM[Room Manager<br/>map[string]*Room]',
+            '    end',
+            '    I --> Y',
+            '    D --> Y',
+            '    RM --> Y',
+            '```',
+          ].join('\n'),
+          state: 'ok',
+          size: 256,
+        }],
+      },
+      activePreviewTabIdBySession: {
+        ...state.activePreviewTabIdBySession,
+        'session-markdown-mermaid-preview': 'file:architecture.md',
+      },
+    }))
+
+    const view = await renderPanel('session-markdown-mermaid-preview')
+
+    const surface = await view.findByTestId('mermaid-diagram-surface')
+    expect(surface.textContent).toContain('插入操作')
+    expect(surface.textContent).toContain('{content, position, clock, clientID}')
+    expect(surface.textContent).toContain('map[string]*Room')
+    expect(view.queryByText('Mermaid Error')).toBeNull()
+    expect(view.queryByTestId('workspace-code')).toBeNull()
+  })
+
   it('opens a context menu for preview tabs and closes tabs to the right', async () => {
     await setWorkspaceState((state) => ({
       ...state,
@@ -1265,6 +1489,7 @@ describe('WorkspacePanel', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],

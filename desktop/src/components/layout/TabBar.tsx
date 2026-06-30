@@ -4,6 +4,9 @@ import {
   SCHEDULED_TAB_ID,
   SETTINGS_TAB_ID,
   TERMINAL_TAB_PREFIX,
+  TRACE_LIST_TAB_ID,
+  TRACE_TAB_PREFIX,
+  WORKBENCH_TAB_PREFIX,
   useTabStore,
   type Tab,
 } from '../../stores/tabStore'
@@ -12,13 +15,16 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { useWorkspacePanelStore } from '../../stores/workspacePanelStore'
 import { useTerminalPanelStore } from '../../stores/terminalPanelStore'
 import { useTranslation } from '../../i18n'
+import { getDesktopHost } from '../../lib/desktopHost'
 import { WindowControls, showWindowControls } from './WindowControls'
 import { OpenProjectMenu } from './OpenProjectMenu'
 import { Folder, FolderOpen, SquareTerminal } from 'lucide-react'
+import { ActionDialog } from '../shared/ActionDialog'
 
 const TAB_WIDTH = 180
 const DRAG_START_THRESHOLD = 4
-const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+const desktopHost = getDesktopHost()
+const isDesktopRuntime = desktopHost.isDesktop
 
 type PendingCloseRequest = {
   tabs: Tab[]
@@ -37,7 +43,10 @@ function isSessionTabId(tabId: string | null) {
   if (!tabId) return false
   return tabId !== SETTINGS_TAB_ID &&
     tabId !== SCHEDULED_TAB_ID &&
-    !tabId.startsWith(TERMINAL_TAB_PREFIX)
+    tabId !== TRACE_LIST_TAB_ID &&
+    !tabId.startsWith(TERMINAL_TAB_PREFIX) &&
+    !tabId.startsWith(TRACE_TAB_PREFIX) &&
+    !tabId.startsWith(WORKBENCH_TAB_PREFIX)
 }
 
 export function TabBar() {
@@ -61,9 +70,16 @@ export function TabBar() {
   const openProjectPath = isActiveSessionTab && activeSession?.workDirExists !== false
     ? activeSession?.workDir ?? null
     : null
-  const isWorkspacePanelOpen = useWorkspacePanelStore((state) =>
+  // The right-side panel is now a single unified "workbench" with a per-session
+  // mode (file ↔ browser). The folder/browser toolbar buttons reflect whether
+  // the panel is open in their respective mode.
+  const isWorkbenchOpen = useWorkspacePanelStore((state) =>
     activeTabId && isActiveSessionTab ? state.isPanelOpen(activeTabId) : false,
   )
+  const workbenchMode = useWorkspacePanelStore((state) =>
+    activeTabId && isActiveSessionTab ? state.getMode(activeTabId) : 'workspace',
+  )
+  const isWorkspacePanelOpen = isWorkbenchOpen && workbenchMode === 'workspace'
   const isTerminalPanelOpen = useTerminalPanelStore((state) =>
     activeTabId && isActiveSessionTab ? state.isPanelOpen(activeTabId) : false,
   )
@@ -81,7 +97,6 @@ export function TabBar() {
   const pendingDragRef = useRef<{ index: number; startX: number; startY: number } | null>(null)
   const suppressClickRef = useRef(false)
   const tabRefs = useRef(new Map<string, HTMLDivElement | null>())
-  const startDraggingRef = useRef<(() => Promise<void>) | null>(null)
   const t = useTranslation()
   const runningSessionIds = useMemo(() => {
     const ids = new Set<string>()
@@ -93,16 +108,6 @@ export function TabBar() {
     }
     return ids
   }, [activeChatSessionIds, tabs])
-
-  useEffect(() => {
-    if (!isTauri) return
-    import('@tauri-apps/api/window')
-      .then(({ getCurrentWindow }) => {
-        const win = getCurrentWindow()
-        startDraggingRef.current = () => win.startDragging()
-      })
-      .catch(() => {})
-  }, [])
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current
@@ -320,16 +325,10 @@ export function TabBar() {
     setActiveTab(sessionId)
   }
 
-  const handleScrollRegionMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || event.target !== scrollRef.current) return
-    const startDragging = startDraggingRef.current
-    if (!startDragging) return
-    void startDragging().catch(() => {})
-  }, [])
-
   return (
     <div
       data-testid="tab-bar"
+      data-desktop-drag-region={isDesktopRuntime ? true : undefined}
       className="flex min-h-11 items-stretch bg-[var(--color-surface-container)] select-none border-b border-[var(--color-border)]"
     >
 
@@ -341,9 +340,10 @@ export function TabBar() {
 
       <div
         ref={scrollRef}
-        className="tab-bar-hit-area flex-1 flex items-stretch overflow-x-hidden"
+        data-testid="tab-bar-scroll-region"
+        data-desktop-drag-region={isDesktopRuntime ? true : undefined}
+        className="flex-1 flex items-stretch overflow-x-hidden"
         onDragOver={(e) => e.preventDefault()}
-        onMouseDown={handleScrollRegionMouseDown}
       >
         {tabs.map((tab, index) => (
           <TabItem
@@ -365,7 +365,7 @@ export function TabBar() {
       </div>
 
       <div className="flex shrink-0 items-center gap-1 border-l border-[var(--color-border)]/70 px-2">
-        {isTauri && isActiveSessionTab && (
+        {isDesktopRuntime && isActiveSessionTab && (
           <OpenProjectMenu path={openProjectPath} />
         )}
         <ToolbarIconButton
@@ -384,16 +384,24 @@ export function TabBar() {
           <ToolbarIconButton
             icon={isWorkspacePanelOpen ? <FolderOpen size={18} strokeWidth={1.9} /> : <Folder size={18} strokeWidth={1.9} />}
             label={t(isWorkspacePanelOpen ? 'tabs.hideWorkspace' : 'tabs.showWorkspace')}
-            onClick={() => useWorkspacePanelStore.getState().togglePanel(activeTabId)}
+            onClick={() => {
+              const workbench = useWorkspacePanelStore.getState()
+              if (workbench.isPanelOpen(activeTabId) && workbench.getMode(activeTabId) === 'workspace') {
+                workbench.closePanel(activeTabId)
+              } else {
+                workbench.setMode(activeTabId, 'workspace')
+                workbench.openPanel(activeTabId)
+              }
+            }}
             active={isWorkspacePanelOpen}
           />
         )}
       </div>
 
-      {isTauri && (
+      {isDesktopRuntime && (
         <div
           data-testid="tab-bar-drag-gutter"
-          data-tauri-drag-region
+          data-desktop-drag-region
           aria-hidden="true"
           className={`min-h-11 flex-shrink-0 ${showWindowControls ? 'w-3' : 'w-4'}`}
         />
@@ -446,47 +454,43 @@ export function TabBar() {
         </div>
       )}
 
-      {pendingCloseRequest && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30">
-          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-6 max-w-sm w-full mx-4" style={{ boxShadow: 'var(--shadow-dropdown)' }}>
-            <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-              {pendingCloseRequest.runningSessionIds.length > 1
-                ? t('tabs.closeAllConfirmTitle')
-                : t('tabs.closeConfirmTitle')}
-            </h3>
-            <p className="text-xs text-[var(--color-text-secondary)] mb-4">
-              {pendingCloseRequest.runningSessionIds.length > 1
-                ? t('tabs.closeAllConfirmMessage', { count: pendingCloseRequest.runningSessionIds.length })
-                : t('tabs.closeConfirmMessage')}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setPendingCloseRequest(null)} className="px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]">
-                {t('common.cancel')}
-              </button>
-              <button
-                onClick={() => {
-                  closeTabsWithPolicy(pendingCloseRequest.tabs, pendingCloseRequest.runningSessionIds, false)
-                  setPendingCloseRequest(null)
-                }}
-                className="px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
-              >
-                {t('tabs.closeConfirmKeep')}
-              </button>
-              <button
-                onClick={() => {
-                  closeTabsWithPolicy(pendingCloseRequest.tabs, pendingCloseRequest.runningSessionIds, true)
-                  setPendingCloseRequest(null)
-                }}
-                className="px-3 py-1.5 text-xs rounded-lg bg-[var(--color-brand)] text-white hover:opacity-90"
-              >
-                {pendingCloseRequest.runningSessionIds.length > 1
-                  ? t('tabs.closeAllConfirmStop')
-                  : t('tabs.closeConfirmStop')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ActionDialog
+        open={pendingCloseRequest !== null}
+        onClose={() => setPendingCloseRequest(null)}
+        title={pendingCloseRequest && pendingCloseRequest.runningSessionIds.length > 1
+          ? t('tabs.closeAllConfirmTitle')
+          : t('tabs.closeConfirmTitle')}
+        body={pendingCloseRequest && pendingCloseRequest.runningSessionIds.length > 1
+          ? t('tabs.closeAllConfirmMessage', { count: pendingCloseRequest.runningSessionIds.length })
+          : t('tabs.closeConfirmMessage')}
+        actions={[
+          {
+            label: t('common.cancel'),
+            onClick: () => setPendingCloseRequest(null),
+            variant: 'secondary',
+          },
+          {
+            label: t('tabs.closeConfirmKeep'),
+            onClick: () => {
+              if (!pendingCloseRequest) return
+              closeTabsWithPolicy(pendingCloseRequest.tabs, pendingCloseRequest.runningSessionIds, false)
+              setPendingCloseRequest(null)
+            },
+            variant: 'secondary',
+          },
+          {
+            label: pendingCloseRequest && pendingCloseRequest.runningSessionIds.length > 1
+              ? t('tabs.closeAllConfirmStop')
+              : t('tabs.closeConfirmStop'),
+            onClick: () => {
+              if (!pendingCloseRequest) return
+              closeTabsWithPolicy(pendingCloseRequest.tabs, pendingCloseRequest.runningSessionIds, true)
+              setPendingCloseRequest(null)
+            },
+            variant: 'danger',
+          },
+        ]}
+      />
     </div>
   )
 }
@@ -512,7 +516,7 @@ const TabItem = forwardRef<HTMLDivElement, {
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
       className={`
-        tab-bar-hit-area group relative flex min-h-11 flex-shrink-0 items-center gap-1.5 px-3
+        tab-bar-interactive group relative flex min-h-11 flex-shrink-0 items-center gap-1.5 px-3
         ${isDragging ? 'z-20 cursor-grabbing' : 'cursor-grab'}
         transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out
         ${isActive
@@ -546,6 +550,9 @@ const TabItem = forwardRef<HTMLDivElement, {
       )}
       {tab.type === 'terminal' && (
         <span className="material-symbols-outlined text-[14px] flex-shrink-0 text-[var(--color-text-tertiary)]">terminal</span>
+      )}
+      {tab.type === 'workbench' && (
+        <span className="material-symbols-outlined text-[14px] flex-shrink-0 text-[var(--color-text-tertiary)]">view_sidebar</span>
       )}
 
       <span className={`flex-1 truncate text-xs ${isActive ? 'text-[var(--color-text-primary)] font-medium' : 'text-[var(--color-text-secondary)]'}`}>

@@ -1,5 +1,5 @@
 /**
- * Unit tests for CCToolsOpenAIOAuthService — cctools 自管 OpenAI OAuth 的核心 service 层。
+ * Unit tests for HahaOpenAIOAuthService — haha 自管 OpenAI OAuth 的核心 service 层。
  */
 
 import { describe, test, expect, beforeEach, afterEach, spyOn } from 'bun:test'
@@ -8,14 +8,15 @@ import * as path from 'path'
 import * as os from 'os'
 import { createConnection, createServer } from 'net'
 import {
-  CCToolsOpenAIOAuthService,
-  getCCToolsOpenAIOAuthFilePath,
+  HahaOpenAIOAuthService,
+  getHahaOpenAIOAuthFilePath,
   type StoredOpenAIOAuthTokens,
-} from '../services/cctoolsOpenAIOAuthService.js'
+} from '../services/hahaOpenAIOAuthService.js'
+import { resetSettingsCache } from '../../utils/settings/settingsCache.js'
 
 let tmpDir: string
 let originalConfigDir: string | undefined
-let service: CCToolsOpenAIOAuthService
+let service: HahaOpenAIOAuthService
 let callbackPort: number
 
 async function getFreePort(): Promise<number> {
@@ -71,12 +72,13 @@ function mockJwt(payload: Record<string, unknown>): string {
 
 async function setup() {
   tmpDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'cctools-openai-oauth-test-'),
+    path.join(os.tmpdir(), 'haha-openai-oauth-test-'),
   )
   originalConfigDir = process.env.CLAUDE_CONFIG_DIR
   process.env.CLAUDE_CONFIG_DIR = tmpDir
+  resetSettingsCache()
   callbackPort = await getFreePort()
-  service = new CCToolsOpenAIOAuthService({ callbackPort })
+  service = new HahaOpenAIOAuthService({ callbackPort })
 }
 
 async function teardown() {
@@ -86,10 +88,11 @@ async function teardown() {
   } else {
     process.env.CLAUDE_CONFIG_DIR = originalConfigDir
   }
+  resetSettingsCache()
   await fs.rm(tmpDir, { recursive: true, force: true })
 }
 
-describe('CCToolsOpenAIOAuthService — file storage', () => {
+describe('HahaOpenAIOAuthService — file storage', () => {
   beforeEach(setup)
   afterEach(teardown)
 
@@ -109,7 +112,7 @@ describe('CCToolsOpenAIOAuthService — file storage', () => {
     }
     await service.saveTokens(tokens)
 
-    const oauthPath = getCCToolsOpenAIOAuthFilePath()
+    const oauthPath = getHahaOpenAIOAuthFilePath()
     const stat = await fs.stat(oauthPath)
     if (process.platform !== 'win32') {
       expect(stat.mode & 0o777).toBe(0o600)
@@ -153,7 +156,7 @@ describe('CCToolsOpenAIOAuthService — file storage', () => {
       renameSpy.mockRestore()
     }
 
-    const oauthPath = getCCToolsOpenAIOAuthFilePath()
+    const oauthPath = getHahaOpenAIOAuthFilePath()
     const files = await fs.readdir(path.dirname(oauthPath))
     expect(
       files.filter((name) => name.startsWith('openai-oauth.json.tmp.')),
@@ -162,7 +165,7 @@ describe('CCToolsOpenAIOAuthService — file storage', () => {
   })
 })
 
-describe('CCToolsOpenAIOAuthService — session management', () => {
+describe('HahaOpenAIOAuthService — session management', () => {
   beforeEach(setup)
   afterEach(teardown)
 
@@ -250,6 +253,53 @@ describe('CCToolsOpenAIOAuthService — session management', () => {
     }
   })
 
+  test('callback listener uses saved manual network proxy for token exchange', async () => {
+    const originalFetch = globalThis.fetch
+    await fs.writeFile(
+      path.join(tmpDir, 'settings.json'),
+      JSON.stringify({
+        network: {
+          aiRequestTimeoutMs: 45_000,
+          proxy: {
+            mode: 'manual',
+            url: ' http://127.0.0.1:7890 ',
+          },
+        },
+      }),
+      'utf-8',
+    )
+    resetSettingsCache()
+
+    const session = await service.startSession({ serverPort: 54321 })
+    let tokenRequestInit: RequestInit | undefined
+
+    globalThis.fetch = (async (_url, init) => {
+      tokenRequestInit = init
+      return new Response(
+        JSON.stringify({
+          access_token: 'openai-access-token',
+          refresh_token: 'openai-refresh-token',
+          expires_in: 3600,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }) as typeof fetch
+
+    try {
+      const res = await getLocalCallback(
+        `/auth/callback?code=auth-code&state=${session.state}`,
+      )
+
+      expect(res.status).toBe(200)
+      expect((tokenRequestInit as { proxy?: string } | undefined)?.proxy).toBe(
+        'http://127.0.0.1:7890',
+      )
+      expect(tokenRequestInit?.signal).toBeInstanceOf(AbortSignal)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test('callback listener renders an error page when token exchange fails', async () => {
     const originalFetch = globalThis.fetch
     const session = await service.startSession({ serverPort: 54321 })
@@ -289,7 +339,7 @@ describe('CCToolsOpenAIOAuthService — session management', () => {
   })
 })
 
-describe('CCToolsOpenAIOAuthService — ensureFreshAccessToken', () => {
+describe('HahaOpenAIOAuthService — ensureFreshAccessToken', () => {
   beforeEach(setup)
   afterEach(teardown)
 

@@ -31,8 +31,8 @@ vi.mock('../components/chat/SessionTaskBar', () => ({
   SessionTaskBar: () => <div data-testid="session-task-bar" />,
 }))
 
-vi.mock('../components/workspace/WorkspacePanel', () => ({
-  WorkspacePanel: ({ sessionId }: { sessionId: string }) => (
+vi.mock('../components/workbench/WorkbenchPanel', () => ({
+  WorkbenchPanel: ({ sessionId }: { sessionId: string }) => (
     <div data-testid="workspace-panel">workspace:{sessionId}</div>
   ),
 }))
@@ -132,6 +132,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -144,6 +145,45 @@ describe('ActiveSession task polling', () => {
     render(<ActiveSession />)
 
     expect(screen.getByTestId('message-list')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-variant', 'default')
+  })
+
+  it('shows a loading state for historical sessions while messages are loading', () => {
+    const sessionId = 'history-visible-loading-session'
+
+    useSessionStore.setState({
+      sessions: [{
+        id: sessionId,
+        title: 'History Loading Session',
+        createdAt: '2026-05-07T00:00:00.000Z',
+        modifiedAt: '2026-05-07T00:00:00.000Z',
+        messageCount: 2,
+        projectPath: '/workspace/project',
+        workDir: '/workspace/project',
+        workDirExists: true,
+      }],
+      activeSessionId: sessionId,
+      isLoading: false,
+      error: null,
+    })
+    useTabStore.setState({
+      tabs: [{ sessionId, title: 'History Loading Session', type: 'session', status: 'idle' }],
+      activeTabId: sessionId,
+    })
+    useChatStore.setState({
+      sessions: {
+        [sessionId]: {
+          ...useChatStore.getState().getSession(sessionId),
+          connectionState: 'connected',
+          historyStatus: 'loading',
+        },
+      },
+    })
+
+    render(<ActiveSession />)
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Loading|加载中/)
+    expect(screen.queryByTestId('message-list')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-variant', 'default')
   })
 
@@ -200,6 +240,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -266,6 +307,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -340,6 +382,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -402,6 +445,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -463,6 +507,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -542,6 +587,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -597,6 +643,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -613,16 +660,18 @@ describe('ActiveSession task polling', () => {
     const chatColumn = screen.getByTestId('active-session-chat-column')
     const resizeHandle = screen.getByTestId('workspace-resize-handle')
 
+    const workbenchPanel = screen.getByTestId('workbench-panel')
+
     expect(within(contentRow).getByTestId('message-list')).toBeInTheDocument()
     expect(within(contentRow).getByTestId('message-list')).toHaveAttribute('data-compact', 'true')
-    expect(within(contentRow).getByTestId('workspace-panel')).toHaveTextContent(`workspace:${sessionId}`)
+    expect(within(workbenchPanel).getByTestId('workspace-panel')).toHaveTextContent(`workspace:${sessionId}`)
     expect(within(chatColumn).getByTestId('chat-input')).toBeInTheDocument()
     expect(within(chatColumn).getByTestId('chat-input')).toHaveAttribute('data-compact', 'true')
     expect(chatColumn).toHaveClass('flex-1')
     expect(chatColumn).not.toHaveClass('shrink-0')
     expect(contentRow.children[0]).toBe(chatColumn)
     expect(contentRow.children[1]).toBe(resizeHandle)
-    expect(contentRow.children[2]).toBe(screen.getByTestId('workspace-panel'))
+    expect(contentRow.children[2]).toBe(workbenchPanel)
 
     act(() => {
       fireEvent.keyDown(resizeHandle, { key: 'ArrowLeft' })
@@ -667,6 +716,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -722,6 +772,7 @@ describe('ActiveSession task polling', () => {
             pendingPermission: null,
             pendingComputerUsePermission: null,
             tokenUsage: { input_tokens: 0, output_tokens: 0 },
+            streamingResponseChars: 0,
             elapsedSeconds: 0,
             statusVerb: '',
             slashCommands: [],
@@ -775,6 +826,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -834,6 +886,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],
@@ -905,6 +958,63 @@ describe('ActiveSession task polling', () => {
     expect(useTabStore.getState().activeTabId).toBe(terminalTab?.sessionId)
   })
 
+  it('keeps the docked terminal usable on a new empty session', () => {
+    const sessionId = 'empty-terminal-session'
+
+    useSessionStore.setState({
+      sessions: [{
+        id: sessionId,
+        title: 'Empty Terminal Session',
+        createdAt: '2026-04-10T00:00:00.000Z',
+        modifiedAt: '2026-04-10T00:00:00.000Z',
+        messageCount: 0,
+        projectPath: '/tmp/project-root',
+        workDir: '/tmp/project-root',
+        workDirExists: true,
+      }],
+      activeSessionId: sessionId,
+      isLoading: false,
+      error: null,
+    })
+    useTabStore.setState({
+      tabs: [{ sessionId, title: 'Empty Terminal Session', type: 'session', status: 'idle' }],
+      activeTabId: sessionId,
+    })
+    useChatStore.setState({
+      sessions: {
+        [sessionId]: {
+          messages: [],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
+    })
+    useTerminalPanelStore.getState().openPanel(sessionId)
+
+    render(<ActiveSession />)
+
+    expect(screen.getByTestId('active-session-chat-column')).toHaveClass('min-h-0')
+    expect(screen.getByTestId('empty-session-hero')).toHaveClass('min-h-0')
+    expect(screen.getByTestId('empty-session-hero')).toHaveClass('pb-6')
+    expect(screen.getByTestId('empty-session-hero')).not.toHaveClass('pb-32')
+    expect(screen.getByTestId('session-terminal-panel')).toHaveStyle({ height: '420px' })
+    expect(screen.getByTestId('terminal-resize-handle')).toHaveAttribute('aria-valuemax', '760')
+  })
+
   it('keeps the docked terminal mounted when the panel is hidden', async () => {
     const sessionId = 'terminal-hide-session'
 
@@ -941,6 +1051,7 @@ describe('ActiveSession task polling', () => {
           pendingPermission: null,
           pendingComputerUsePermission: null,
           tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          streamingResponseChars: 0,
           elapsedSeconds: 0,
           statusVerb: '',
           slashCommands: [],

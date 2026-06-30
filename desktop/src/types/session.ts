@@ -10,6 +10,14 @@ export type SessionListItem = {
   projectRoot?: string | null
   workDir: string | null
   workDirExists: boolean
+  permissionMode?: string
+}
+
+export type MessageUsage = {
+  input_tokens?: number
+  output_tokens?: number
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
 }
 
 export type MessageEntry = {
@@ -19,6 +27,7 @@ export type MessageEntry = {
   toolUseResult?: unknown
   timestamp: string
   model?: string
+  usage?: MessageUsage
   parentUuid?: string
   parentToolUseId?: string
   isSidechain?: boolean

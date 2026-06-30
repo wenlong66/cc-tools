@@ -7,7 +7,7 @@
  */
 
 import type { ServerWebSocket } from 'bun'
-import type { ClientMessage, ServerMessage } from './events.js'
+import type { ClientMessage, ServerMessage, StreamingFallbackCause } from './events.js'
 import * as os from 'node:os'
 import {
   ConversationStartupError,
@@ -19,14 +19,25 @@ import { SettingsService } from '../services/settingsService.js'
 import { ProviderService } from '../services/providerService.js'
 import { isOpenAIOfficialProviderId } from '../services/openaiOfficialProvider.js'
 import { diagnosticsService } from '../services/diagnosticsService.js'
-import { deriveTitle, generateTitle, saveAiTitle } from '../services/titleService.js'
+import {
+  buildConversationTitleInput,
+  deriveTitle,
+  generateTitle,
+  resolveTitleLanguagePreference,
+  saveAiTitle,
+  type TitleConversationTurn,
+} from '../services/titleService.js'
 import { parseSlashCommand } from '../../utils/slashCommandParsing.js'
 import {
+  COMMAND_ARGS_TAG,
+  COMMAND_MESSAGE_TAG,
   COMMAND_NAME_TAG,
+  LOCAL_COMMAND_CAVEAT_TAG,
   LOCAL_COMMAND_STDERR_TAG,
   LOCAL_COMMAND_STDOUT_TAG,
 } from '../../constants/xml.js'
 import { shouldCreateWorktreeForSessionLaunch } from '../services/repositoryLaunchService.js'
+import { getDisconnectGraceMs } from './disconnectGraceConfig.js'
 
 const settingsService = new SettingsService()
 const providerService = new ProviderService()
@@ -46,9 +57,15 @@ const sessionSlashCommands = new Map<string, SessionSlashCommand[]>()
  * Timers for delayed session cleanup after client disconnect.
  * If a client reconnects before the timer fires, the timer is cancelled.
  */
-const CLIENT_DISCONNECT_CLEANUP_MS = 30_000
 const PENDING_PERMISSION_DISCONNECT_CLEANUP_MS = 30 * 60_000
 const sessionCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
+/**
+ * Per-session removers for the turn-completion watcher (issue #764). When the
+ * last client disconnects while a turn is still running, we let the turn finish
+ * in the background instead of killing the CLI, then start the idle grace timer
+ * once the result arrives. The remover is also cleared on reconnect/cleanup.
+ */
+const sessionDisconnectWatchers = new Map<string, () => void>()
 
 /**
  * Track sessions where user requested stop — suppress the CLI_ERROR that
@@ -63,22 +80,37 @@ const sessionTitleState = new Map<string, {
   userMessageCount: number
   hasCustomTitle: boolean
   firstUserMessage: string
-  allUserMessages: string[]
-  startedGenerationCounts: Set<number>
+  completedTurns: TitleConversationTurn[]
+  activeTurn?: TitleConversationTurn & { count: number }
+  startedGenerationKeys: Set<string>
+  generationSeq: number
 }>()
 
-const runtimeOverrides = new Map<string, {
+type RuntimeOverride = {
   providerId: string | null
   modelId: string
-}>()
+  effort?: string
+}
+
+type ActiveUserTurnState = {
+  messageSent: boolean
+}
+
+const runtimeOverrides = new Map<string, RuntimeOverride>()
+const activeUserTurns = new Map<string, ActiveUserTurnState>()
+const deferredRuntimeRestarts = new Map<string, RuntimeOverride>()
+const deferredPermissionModes = new Map<string, string>()
 
 const runtimeTransitionPromises = new Map<string, Promise<void>>()
 const sessionStartupPromises = new Map<string, Promise<void>>()
+const runtimeOverrideVersions = new Map<string, number>()
+const sessionStartupRuntimeVersions = new Map<string, number>()
 const lastResolvedStartupWorkDirs = new Map<string, string>()
 const prewarmPendingSessions = new Set<string>()
 const prewarmedSessions = new Set<string>()
 const prewarmIdleTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const DEFAULT_PREWARM_IDLE_TIMEOUT_MS = 5 * 60_000
+const VALID_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'max'])
 
 async function sendRepositoryStartupStatus(
   ws: ServerWebSocket<WebSocketData>,
@@ -144,9 +176,12 @@ export const handleWebSocket = {
       clearTimeout(pendingTimer)
       sessionCleanupTimers.delete(sessionId)
     }
+    // Cancel any "let the running turn finish, then clean up" watcher too —
+    // the session is observed again (issue #764).
+    cancelSessionDisconnectWatcher(sessionId)
 
     addActiveClient(sessionId, ws)
-    if (prewarmedSessions.has(sessionId)) {
+    if (prewarmPendingSessions.has(sessionId) || prewarmedSessions.has(sessionId)) {
       bindPrewarmMetadataCapture(sessionId)
     } else {
       bindClientSessionOutput(sessionId, ws)
@@ -192,7 +227,7 @@ export const handleWebSocket = {
           break
 
         case 'set_permission_mode':
-          handleSetPermissionMode(ws, message)
+          void handleSetPermissionMode(ws, message)
           break
 
         case 'set_runtime_config':
@@ -239,20 +274,17 @@ export const handleWebSocket = {
       return
     }
 
-    computerUseApprovalService.cancelSession(sessionId)
+    // No clients left. A turn that is still running must finish in the
+    // background (issue #764) — never kill it just because a phone locked its
+    // screen. Defer cleanup until the turn completes, then apply the idle
+    // grace period. Sessions that are already idle go straight to the timer.
+    if (isSessionTurnActive(sessionId)) {
+      console.log(`[WS] Session ${sessionId} still running after disconnect; keeping CLI alive until the turn finishes`)
+      watchTurnCompletionForCleanup(sessionId)
+      return
+    }
 
-    // Schedule delayed cleanup. Sessions waiting on user input need a longer
-    // grace period so transient renderer disconnects do not abort the prompt.
-    const cleanupDelayMs = getDisconnectCleanupDelayMs(sessionId)
-    const cleanupTimer = setTimeout(() => {
-      sessionCleanupTimers.delete(sessionId)
-      if (!hasActiveClients(sessionId)) {
-        console.log(`[WS] Session ${sessionId} not reconnected after ${cleanupDelayMs}ms, stopping CLI subprocess`)
-        conversationService.stopSession(sessionId)
-        cleanupSessionRuntimeState(sessionId)
-      }
-    }, cleanupDelayMs)
-    sessionCleanupTimers.set(sessionId, cleanupTimer)
+    scheduleDisconnectCleanup(sessionId)
   },
 
   drain(ws: ServerWebSocket<WebSocketData>) {
@@ -293,8 +325,14 @@ async function handleUserMessage(
   // Send thinking status
   sendMessage(ws, { type: 'status', state: 'thinking', verb: 'Thinking' })
 
+  const activeTurn: ActiveUserTurnState = { messageSent: false }
+  activeUserTurns.set(sessionId, activeTurn)
+
   const initialRuntimeTransition = await waitForRuntimeTransitionBeforeUserTurn(ws, sessionId)
-  if (!initialRuntimeTransition.ok) return
+  if (!initialRuntimeTransition.ok) {
+    clearActiveUserTurn(sessionId, activeTurn)
+    return
+  }
   if (initialRuntimeTransition.waited) {
     sendMessage(ws, { type: 'status', state: 'thinking', verb: 'Thinking' })
   }
@@ -306,19 +344,26 @@ async function handleUserMessage(
       userMessageCount: 0,
       hasCustomTitle: !!(await sessionService.getCustomTitle(sessionId)),
       firstUserMessage: '',
-      allUserMessages: [],
-      startedGenerationCounts: new Set<number>(),
+      completedTurns: [],
+      startedGenerationKeys: new Set<string>(),
+      generationSeq: 0,
     }
     sessionTitleState.set(sessionId, titleState)
   }
   const titleInput = getTitleInputForUserMessage(message.content, desktopSlashCommand)
+  let titleTurnNumber: number | null = null
   if (titleInput) {
     titleState.userMessageCount++
-    titleState.allUserMessages.push(titleInput)
+    titleTurnNumber = titleState.userMessageCount
+    titleState.activeTurn = {
+      count: titleTurnNumber,
+      userText: titleInput,
+      assistantText: '',
+    }
     if (titleState.userMessageCount === 1) {
       titleState.firstUserMessage = titleInput
     }
-    triggerTitleGeneration(ws, sessionId)
+    triggerTitleGeneration(ws, sessionId, 'user-message')
   }
 
   // 启动 CLI 子进程（如果还没有）
@@ -337,6 +382,7 @@ async function handleUserMessage(
         err instanceof ConversationStartupError ? err.retryable : false,
     })
     sendMessage(ws, { type: 'status', state: 'idle' })
+    clearActiveUserTurn(sessionId, activeTurn)
     return
   }
 
@@ -346,6 +392,7 @@ async function handleUserMessage(
       sendMessage(ws, { type: 'status', state: 'thinking', verb: 'Thinking' })
     }
   } else {
+    clearActiveUserTurn(sessionId, activeTurn)
     return
   }
 
@@ -355,6 +402,9 @@ async function handleUserMessage(
   let userMessageSent = false
   const shouldForwardCurrentTurnLocalCommand =
     createCurrentTurnLocalCommandForwarder(desktopSlashCommand)
+  const removeTitleOutputCallback = titleTurnNumber === null
+    ? null
+    : bindTitleSessionOutput(ws, sessionId, () => userMessageSent)
 
   bindAllClientSessionOutputs(sessionId, {
     shouldForward: (cliMsg) => {
@@ -364,13 +414,18 @@ async function handleUserMessage(
       return shouldForwardCurrentTurnLocalCommand(cliMsg)
     },
   })
+  const removeActiveTurnOutputCallback = bindActiveUserTurnCompletion(ws, sessionId, activeTurn)
 
-  const sent = conversationService.sendMessage(
+  const sent = await conversationService.sendMessage(
     sessionId,
     message.content,
     message.attachments
   )
   if (!sent) {
+    removeActiveTurnOutputCallback()
+    clearActiveUserTurn(sessionId, activeTurn)
+    removeTitleOutputCallback?.()
+    discardActiveTitleTurn(sessionId, titleTurnNumber)
     sendMessage(ws, {
       type: 'error',
       message: 'CLI process is not running. The session may have ended or the process crashed.',
@@ -381,6 +436,77 @@ async function handleUserMessage(
   }
 
   userMessageSent = true
+  activeTurn.messageSent = true
+}
+
+function clearActiveUserTurn(sessionId: string, activeTurn: ActiveUserTurnState): void {
+  if (activeUserTurns.get(sessionId) === activeTurn) {
+    activeUserTurns.delete(sessionId)
+  }
+}
+
+function bindActiveUserTurnCompletion(
+  ws: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+  activeTurn: ActiveUserTurnState,
+): () => void {
+  const callback = (cliMsg: any) => {
+    if (!activeTurn.messageSent || cliMsg?.type !== 'result') return
+
+    conversationService.removeOutputCallback(sessionId, callback)
+    clearActiveUserTurn(sessionId, activeTurn)
+    // Structurally disarm any prewarm idle timer that a concurrent
+    // prewarm_session/user_message flush may have armed on this session: once a
+    // turn completes the session is firmly user-owned, so no prewarm reaper
+    // should survive — regardless of the order in which the two raced.
+    clearPrewarmState(sessionId)
+    applyDeferredPermissionModeAfterActiveTurn(ws, sessionId)
+    applyDeferredRuntimeRestartAfterActiveTurn(ws, sessionId)
+  }
+
+  conversationService.onOutput(sessionId, callback)
+  return () => conversationService.removeOutputCallback(sessionId, callback)
+}
+
+function shouldDeferRuntimeRestartForActiveTurn(sessionId: string): boolean {
+  return activeUserTurns.get(sessionId)?.messageSent === true
+}
+
+function applyDeferredPermissionModeAfterActiveTurn(
+  ws: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+): void {
+  const deferredMode = deferredPermissionModes.get(sessionId)
+  if (!deferredMode) return
+
+  deferredPermissionModes.delete(sessionId)
+  void enqueueRuntimeTransition(sessionId, async () => {
+    if (!conversationService.hasSession(sessionId)) return
+    await applyPermissionModeToActiveSession(ws, sessionId, deferredMode)
+  })
+}
+
+function applyDeferredRuntimeRestartAfterActiveTurn(
+  ws: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+): void {
+  const deferred = deferredRuntimeRestarts.get(sessionId)
+  if (!deferred) return
+
+  deferredRuntimeRestarts.delete(sessionId)
+  void enqueueRuntimeTransition(sessionId, async () => {
+    const currentOverride = runtimeOverrides.get(sessionId)
+    if (
+      !currentOverride ||
+      currentOverride.providerId !== deferred.providerId ||
+      currentOverride.modelId !== deferred.modelId ||
+      currentOverride.effort !== deferred.effort ||
+      !conversationService.hasSession(sessionId)
+    ) {
+      return
+    }
+    await restartSessionWithRuntimeConfig(ws, sessionId)
+  })
 }
 
 async function handleDesktopClearCommand(
@@ -426,6 +552,15 @@ async function handlePrewarmSession(ws: ServerWebSocket<WebSocketData>) {
   }
 
   const launchInfo = await sessionService.getSessionLaunchInfo(sessionId).catch(() => null)
+
+  // Re-check after async gap: a user_message may have arrived during the await
+  // and already started (or is starting) the CLI session. If so, skip prewarm
+  // entirely — the user turn owns this session now, and calling markPrewarmed()
+  // would arm an idle timer that later kills the active conversation.
+  if (conversationService.hasSession(sessionId) || sessionStartupPromises.has(sessionId)) {
+    return
+  }
+
   if (launchInfo?.repository) {
     console.log(`[WS] Skipping prewarm for pending repository launch session ${sessionId}`)
     return
@@ -434,7 +569,17 @@ async function handlePrewarmSession(ws: ServerWebSocket<WebSocketData>) {
   prewarmPendingSessions.add(sessionId)
   void ensureCliSessionStarted(ws, sessionId, 'prewarm_session')
     .then(() => {
-      if (!prewarmPendingSessions.delete(sessionId)) return
+      const stillPending = prewarmPendingSessions.delete(sessionId)
+      if (!stillPending) return
+      // Safety: if a user message arrived and claimed this session while we
+      // were waiting for startup, do NOT arm the prewarm idle timer — the
+      // session is now owned by the user conversation, not prewarm. Use the
+      // turn-registered check (not messageSent) so the CLI-startup window is
+      // covered: in the concurrent race the turn is registered but messageSent
+      // is still false when this .then runs, which made the old guard dead code.
+      if (hasPendingOrActiveUserTurn(sessionId)) {
+        return
+      }
       bindPrewarmMetadataCapture(sessionId)
       markPrewarmed(sessionId)
     })
@@ -459,6 +604,8 @@ function handlePermissionResponse(
     message.allowed,
     message.rule,
     message.updatedInput,
+    message.denyMessage,
+    message.permissionUpdates,
   )
   console.log(`[WS] Permission response for ${message.requestId}: ${message.allowed}`)
 }
@@ -479,32 +626,80 @@ function handleComputerUsePermissionResponse(
   }
 }
 
-function handleSetPermissionMode(
+async function handleSetPermissionMode(
   ws: ServerWebSocket<WebSocketData>,
   message: Extract<ClientMessage, { type: 'set_permission_mode' }>
-) {
+): Promise<void> {
   const { sessionId } = ws.data
+  const pendingStartup = sessionStartupPromises.get(sessionId)
 
-  // Switching to/from bypassPermissions requires the CLI to be (re)started with
-  // --dangerously-skip-permissions. The CLI rejects a runtime set_permission_mode
-  // to bypassPermissions if it wasn't launched with that flag.  Rather than just
-  // sending the SDK message (which would silently fail), restart the CLI subprocess
-  // with the correct arguments so the new permission mode takes effect.
-  const needsRestart =
-    conversationService.hasSession(sessionId) &&
-    (message.mode === 'bypassPermissions' || conversationService.getSessionPermissionMode(sessionId) === 'bypassPermissions')
+  if (pendingStartup) {
+    await persistSessionPermissionMode(sessionId, message.mode)
+    await enqueueRuntimeTransition(sessionId, async () => {
+      await pendingStartup.catch(() => undefined)
+      if (!conversationService.hasSession(sessionId)) return
+      await applyPermissionModeToActiveSession(ws, sessionId, message.mode)
+    })
+    return
+  }
+
+  if (!conversationService.hasSession(sessionId)) {
+    await persistSessionPermissionMode(sessionId, message.mode)
+    return
+  }
+
+  await applyPermissionModeToActiveSession(ws, sessionId, message.mode)
+}
+
+/**
+ * 决定一次权限模式切换是否需要重启 CLI 子进程。
+ *
+ * 只有"进入 bypassPermissions"才需要重启：CLI 必须带 --dangerously-skip-permissions
+ * 启动，否则运行时的 set_permission_mode → bypassPermissions 会被拒绝，所以重启子进程
+ * 带上该 flag。
+ *
+ * 反过来"从 bypassPermissions 切到更严格的模式"**不要**重启：此时进程已带 flag，运行时
+ * 降级即可。更关键的是——重启会把进程内的 prePlanMode 记忆冲掉：若 bypass→plan 走重启，
+ * 新 CLI 直接以 plan 启动、prePlanMode 为空，ExitPlanMode 只能恢复成 default 而非进入前的
+ * bypassPermissions。保持进程不变、走 setPermissionMode 做进程内 transition，CLI 才会像 TUI
+ * 一样栈存 prePlanMode='bypassPermissions'，退出 plan 时正确恢复 bypass。
+ */
+export function shouldRestartForPermissionMode(
+  currentMode: string,
+  mode: string,
+): boolean {
+  if (currentMode === mode) return false
+  return mode === 'bypassPermissions'
+}
+
+async function applyPermissionModeToActiveSession(
+  ws: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+  mode: string,
+): Promise<void> {
+  const currentMode = conversationService.getSessionPermissionMode(sessionId)
+  if (shouldDeferRuntimeRestartForActiveTurn(sessionId)) {
+    deferredPermissionModes.set(sessionId, mode)
+    await persistSessionPermissionMode(sessionId, mode)
+    return
+  }
+
+  if (currentMode === mode) return
+  const needsRestart = shouldRestartForPermissionMode(currentMode, mode)
 
   if (needsRestart) {
     void enqueueRuntimeTransition(sessionId, () =>
-      restartSessionWithPermissionMode(ws, sessionId, message.mode),
+      restartSessionWithPermissionMode(ws, sessionId, mode),
     )
     return
   }
 
-  const ok = conversationService.setPermissionMode(sessionId, message.mode)
+  const ok = conversationService.setPermissionMode(sessionId, mode)
   if (!ok) {
     console.warn(`[WS] Ignored permission mode update for inactive session ${sessionId}`)
+    return
   }
+  await persistSessionPermissionMode(sessionId, mode)
 }
 
 async function handleSetRuntimeConfig(
@@ -521,44 +716,79 @@ async function handleSetRuntimeConfig(
     })
     return
   }
+  const effortLevel =
+    typeof message.effortLevel === 'string' ? message.effortLevel.trim() : undefined
+  if (effortLevel !== undefined && !VALID_EFFORT_LEVELS.has(effortLevel)) {
+    sendMessage(ws, {
+      type: 'error',
+      message: 'Runtime effort selection is invalid.',
+      code: 'RUNTIME_CONFIG_INVALID',
+    })
+    return
+  }
 
   const nextOverride = {
     providerId: message.providerId ?? null,
     modelId,
+    ...(effortLevel ? { effort: effortLevel } : {}),
   }
   const prevOverride = runtimeOverrides.get(sessionId)
-  runtimeOverrides.set(sessionId, nextOverride)
-
   if (
     prevOverride &&
     prevOverride.providerId === nextOverride.providerId &&
-    prevOverride.modelId === nextOverride.modelId
+    prevOverride.modelId === nextOverride.modelId &&
+    prevOverride.effort === nextOverride.effort
   ) {
     return
   }
 
-  if (!conversationService.hasSession(sessionId)) {
-    const pendingStartup = sessionStartupPromises.get(sessionId)
-    if (pendingStartup) {
-      await enqueueRuntimeTransition(sessionId, async () => {
-        await pendingStartup.catch(() => undefined)
-        const currentOverride = runtimeOverrides.get(sessionId)
-        if (
-          currentOverride?.providerId !== nextOverride.providerId ||
-          currentOverride.modelId !== nextOverride.modelId ||
-          !conversationService.hasSession(sessionId)
-        ) {
-          return
-        }
-        await restartSessionWithRuntimeConfig(ws, sessionId)
-      })
-    }
+  runtimeOverrides.set(sessionId, nextOverride)
+  runtimeOverrideVersions.set(
+    sessionId,
+    (runtimeOverrideVersions.get(sessionId) ?? 0) + 1,
+  )
+
+  if (shouldDeferRuntimeRestartForActiveTurn(sessionId)) {
+    deferredRuntimeRestarts.set(sessionId, nextOverride)
+    await persistSessionRuntimeConfig(sessionId, nextOverride)
     return
   }
 
-  await enqueueRuntimeTransition(sessionId, () =>
-    restartSessionWithRuntimeConfig(ws, sessionId),
-  )
+  if (conversationService.hasSession(sessionId)) {
+    await enqueueRuntimeTransition(sessionId, async () => {
+      await persistSessionRuntimeConfig(sessionId, nextOverride)
+      await restartSessionWithRuntimeConfig(ws, sessionId)
+    })
+    return
+  }
+
+  const pendingStartup = sessionStartupPromises.get(sessionId)
+  if (pendingStartup) {
+    const startupRuntimeVersion = sessionStartupRuntimeVersions.get(sessionId) ?? 0
+    const currentRuntimeVersion = runtimeOverrideVersions.get(sessionId) ?? 0
+    if (startupRuntimeVersion >= currentRuntimeVersion) {
+      await persistSessionRuntimeConfig(sessionId, nextOverride)
+      return
+    }
+
+    await enqueueRuntimeTransition(sessionId, async () => {
+      await persistSessionRuntimeConfig(sessionId, nextOverride)
+      await pendingStartup.catch(() => undefined)
+      const currentOverride = runtimeOverrides.get(sessionId)
+      if (
+        currentOverride?.providerId !== nextOverride.providerId ||
+        currentOverride.modelId !== nextOverride.modelId ||
+        currentOverride.effort !== nextOverride.effort ||
+        !conversationService.hasSession(sessionId)
+      ) {
+        return
+      }
+      await restartSessionWithRuntimeConfig(ws, sessionId)
+    })
+    return
+  }
+
+  await persistSessionRuntimeConfig(sessionId, nextOverride)
 }
 
 async function restartSessionWithPermissionMode(
@@ -567,13 +797,11 @@ async function restartSessionWithPermissionMode(
   mode: string,
 ): Promise<void> {
   try {
-    // Persist the new mode first so it's read on restart
-    await settingsService.setPermissionMode(mode)
-
     const workDir = conversationService.getSessionWorkDir(sessionId)
+    await persistSessionPermissionMode(sessionId, mode, workDir)
     conversationService.stopSession(sessionId)
 
-    // Rebuild runtime settings (will pick up the persisted mode)
+    // Rebuild runtime settings (will pick up the session-scoped mode)
     const runtimeSettings = await getRuntimeSettings(sessionId)
     const sdkUrl =
       `ws://${ws.data.serverHost}:${ws.data.serverPort}/sdk/${sessionId}` +
@@ -602,6 +830,42 @@ async function restartSessionWithPermissionMode(
     })
     sendMessage(ws, { type: 'status', state: 'idle' })
   }
+}
+
+async function persistSessionPermissionMode(
+  sessionId: string,
+  mode: string,
+  knownWorkDir?: string | null,
+): Promise<void> {
+  const workDir =
+    knownWorkDir ||
+    conversationService.getSessionWorkDir(sessionId) ||
+    await sessionService.getSessionWorkDir(sessionId).catch(() => null)
+
+  if (!workDir) return
+
+  await sessionService.appendSessionMetadata(sessionId, {
+    workDir,
+    permissionMode: mode,
+  })
+}
+
+async function persistSessionRuntimeConfig(
+  sessionId: string,
+  runtime: { providerId: string | null; modelId: string; effort?: string },
+): Promise<void> {
+  const workDir =
+    conversationService.getSessionWorkDir(sessionId) ||
+    await sessionService.getSessionWorkDir(sessionId).catch(() => null)
+
+  if (!workDir) return
+
+  await sessionService.appendSessionMetadata(sessionId, {
+    workDir,
+    runtimeProviderId: runtime.providerId,
+    runtimeModelId: runtime.modelId,
+    ...(runtime.effort ? { effortLevel: runtime.effort } : {}),
+  })
 }
 
 async function restartSessionWithRuntimeConfig(
@@ -668,27 +932,30 @@ function handleStopGeneration(ws: ServerWebSocket<WebSocketData>) {
 // Title generation
 // ============================================================================
 
-function triggerTitleGeneration(ws: ServerWebSocket<WebSocketData>, sessionId: string): void {
+type TitleGenerationPhase = 'user-message' | 'turn-complete'
+
+function triggerTitleGeneration(
+  ws: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+  phase: TitleGenerationPhase,
+  completedTurnCount?: number,
+): void {
   const state = sessionTitleState.get(sessionId)
   if (!state || state.hasCustomTitle) return
 
-  const count = state.userMessageCount
+  const count = phase === 'turn-complete'
+    ? completedTurnCount ?? state.userMessageCount
+    : state.userMessageCount
 
-  // Generate on count 1 (first response) and count 3 (with more context)
-  if (count !== 1 && count !== 3) return
-  if (state.startedGenerationCounts.has(count)) return
-  state.startedGenerationCounts.add(count)
+  if (phase === 'user-message') {
+    if (count !== 1) return
+    const key = 'placeholder:1'
+    if (state.startedGenerationKeys.has(key)) return
+    state.startedGenerationKeys.add(key)
 
-  const text = count === 1
-    ? state.firstUserMessage
-    : state.allUserMessages.join('\n')
-  const runtimeProviderId = runtimeOverrides.get(sessionId)?.providerId
-
-  // Fire-and-forget: derive quick title, then upgrade with AI
-  void (async () => {
-    try {
-      // Stage 1: quick placeholder (only on first message)
-      if (count === 1) {
+    void (async () => {
+      try {
+        const text = state.firstUserMessage
         const placeholder = deriveTitle(text)
         if (placeholder) {
           const saved = await saveAiTitle(sessionId, placeholder)
@@ -696,24 +963,178 @@ function triggerTitleGeneration(ws: ServerWebSocket<WebSocketData>, sessionId: s
             state.hasCustomTitle = true
             return
           }
-          sendMessage(ws, { type: 'session_title_updated', sessionId, title: placeholder })
+          sendSessionTitleUpdated(ws, sessionId, placeholder)
         }
+      } catch (err) {
+        console.error(`[Title] Failed to derive title for ${sessionId}:`, err)
       }
+    })()
+    return
+  }
 
-      // Stage 2: AI-generated title
-      const aiTitle = await generateTitle(text, runtimeProviderId)
+  // Generate polished titles after assistant output completes on turn 1 and 3.
+  if (count !== 1 && count !== 3) return
+  const key = `complete:${count}`
+  if (state.startedGenerationKeys.has(key)) return
+  state.startedGenerationKeys.add(key)
+
+  const text = buildConversationTitleInput(state.completedTurns)
+  const runtimeProviderId = runtimeOverrides.get(sessionId)?.providerId
+  const generationSeq = ++state.generationSeq
+
+  void (async () => {
+    try {
+      const responseLanguage = await getResponseLanguageSetting()
+      const titleLanguagePreference = resolveTitleLanguagePreference(
+        state.firstUserMessage,
+        responseLanguage,
+      )
+      const aiTitle = await generateTitle(
+        text,
+        runtimeProviderId,
+        titleLanguagePreference,
+      )
+      if (generationSeq !== state.generationSeq) return
       if (aiTitle) {
         const saved = await saveAiTitle(sessionId, aiTitle)
         if (!saved) {
           state.hasCustomTitle = true
           return
         }
-        sendMessage(ws, { type: 'session_title_updated', sessionId, title: aiTitle })
+        sendSessionTitleUpdated(ws, sessionId, aiTitle)
       }
     } catch (err) {
       console.error(`[Title] Failed to generate title for ${sessionId}:`, err)
     }
   })()
+}
+
+async function getResponseLanguageSetting(): Promise<string | undefined> {
+  const userSettings = await settingsService.getUserSettings().catch(() => ({}))
+  return typeof userSettings.language === 'string'
+    ? userSettings.language
+    : undefined
+}
+
+function sendSessionTitleUpdated(
+  fallbackWs: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+  title: string,
+): void {
+  const payload: ServerMessage = { type: 'session_title_updated', sessionId, title }
+  const clients = activeSessions.get(sessionId)
+  if (!clients?.size) {
+    sendMessage(fallbackWs, payload)
+    return
+  }
+  for (const client of clients) {
+    sendMessage(client, payload)
+  }
+}
+
+function bindTitleSessionOutput(
+  ws: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+  shouldProcess: () => boolean,
+): () => void {
+  const callback = (cliMsg: any) => {
+    if (!shouldProcess() && !(cliMsg?.type === 'result' && cliMsg?.is_error)) {
+      return
+    }
+
+    appendAssistantTextForTitle(sessionId, cliMsg)
+
+    if (cliMsg?.type === 'result') {
+      conversationService.removeOutputCallback(sessionId, callback)
+      const completedTurnCount = completeActiveTitleTurn(sessionId)
+      if (!cliMsg.is_error) {
+        triggerTitleGeneration(ws, sessionId, 'turn-complete', completedTurnCount ?? undefined)
+      }
+    }
+  }
+
+  conversationService.onOutput(sessionId, callback)
+  return () => conversationService.removeOutputCallback(sessionId, callback)
+}
+
+function appendAssistantTextForTitle(sessionId: string, cliMsg: any): void {
+  const activeTurn = sessionTitleState.get(sessionId)?.activeTurn
+  if (!activeTurn) return
+
+  const streamText = extractAssistantStreamTextForTitle(cliMsg)
+  if (streamText) {
+    activeTurn.assistantText = `${activeTurn.assistantText ?? ''}${streamText}`
+    return
+  }
+
+  const assistantText = extractAssistantMessageTextForTitle(cliMsg)
+  if (assistantText) {
+    activeTurn.assistantText = activeTurn.assistantText
+      ? `${activeTurn.assistantText}\n${assistantText}`
+      : assistantText
+    return
+  }
+
+  if (
+    cliMsg?.type === 'result' &&
+    !cliMsg.is_error &&
+    !activeTurn.assistantText &&
+    typeof cliMsg.result === 'string'
+  ) {
+    activeTurn.assistantText = cliMsg.result
+  }
+}
+
+function extractAssistantStreamTextForTitle(cliMsg: any): string | null {
+  const event = cliMsg?.event
+  if (
+    cliMsg?.type !== 'stream_event' ||
+    event?.type !== 'content_block_delta' ||
+    event.delta?.type !== 'text_delta' ||
+    typeof event.delta.text !== 'string'
+  ) {
+    return null
+  }
+  return event.delta.text
+}
+
+function extractAssistantMessageTextForTitle(cliMsg: any): string | null {
+  if (cliMsg?.type !== 'assistant') return null
+  const content = cliMsg.message?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return null
+  const text = content
+    .flatMap((block) => {
+      if (!block || typeof block !== 'object') return []
+      const typedBlock = block as { type?: unknown; text?: unknown }
+      return typedBlock.type === 'text' && typeof typedBlock.text === 'string'
+        ? [typedBlock.text]
+        : []
+    })
+    .join('\n')
+    .trim()
+  return text || null
+}
+
+function completeActiveTitleTurn(sessionId: string): number | null {
+  const state = sessionTitleState.get(sessionId)
+  const activeTurn = state?.activeTurn
+  if (!state || !activeTurn) return null
+
+  state.completedTurns.push({
+    userText: activeTurn.userText,
+    assistantText: activeTurn.assistantText?.trim(),
+  })
+  state.activeTurn = undefined
+  return activeTurn.count
+}
+
+function discardActiveTitleTurn(sessionId: string, count: number | null): void {
+  if (count === null) return
+  const state = sessionTitleState.get(sessionId)
+  if (state?.activeTurn?.count === count) {
+    state.activeTurn = undefined
+  }
 }
 
 // ============================================================================
@@ -789,10 +1210,14 @@ function cleanupStreamState(sessionId: string) {
 }
 
 function cleanupSessionRuntimeState(sessionId: string) {
+  cancelSessionDisconnectWatcher(sessionId)
   cleanupStreamState(sessionId)
   sessionSlashCommands.delete(sessionId)
   sessionTitleState.delete(sessionId)
   runtimeOverrides.delete(sessionId)
+  activeUserTurns.delete(sessionId)
+  deferredRuntimeRestarts.delete(sessionId)
+  deferredPermissionModes.delete(sessionId)
   runtimeTransitionPromises.delete(sessionId)
   sessionStartupPromises.delete(sessionId)
   lastResolvedStartupWorkDirs.delete(sessionId)
@@ -829,6 +1254,17 @@ function markPrewarmed(sessionId: string) {
   const timer = setTimeout(() => {
     prewarmIdleTimers.delete(sessionId)
     if (!prewarmedSessions.has(sessionId)) return
+    const turnActive = hasPendingOrActiveUserTurn(sessionId)
+    const hasClients = hasActiveClients(sessionId)
+    // Safety guard: never kill a session that has a registered user turn or
+    // connected clients. The turn-registered check (not messageSent) covers the
+    // CLI-startup window, so a turn racing through startup is protected even if
+    // the client has briefly disconnected. The prewarm idle timer is only meant
+    // to reclaim truly idle prewarmed sessions — not to interrupt a conversation.
+    if (turnActive || hasClients) {
+      prewarmedSessions.delete(sessionId)
+      return
+    }
     console.log(`[WS] Prewarmed session ${sessionId} idle for ${timeoutMs}ms, stopping CLI subprocess`)
     conversationService.stopSession(sessionId)
     prewarmedSessions.delete(sessionId)
@@ -937,16 +1373,22 @@ async function ensureCliSessionStarted(
 
   if (conversationService.hasSession(sessionId)) return
 
+  const startupRuntimeVersion = runtimeOverrideVersions.get(sessionId) ?? 0
+  sessionStartupRuntimeVersions.set(sessionId, startupRuntimeVersion)
+
   const startup = (async () => {
     const workDir = await resolveSessionWorkDir(sessionId)
     lastResolvedStartupWorkDirs.set(sessionId, workDir)
     const runtimeSettings = await getRuntimeSettings(sessionId)
+    const startupSettings = reason === 'prewarm_session'
+      ? { ...runtimeSettings, resumeInterruptedTurn: false }
+      : runtimeSettings
     const sdkUrl =
       `ws://${ws.data.serverHost}:${ws.data.serverPort}/sdk/${sessionId}` +
       `?token=${encodeURIComponent(crypto.randomUUID())}`
     await sendRepositoryStartupStatus(ws, sessionId, reason)
     console.log(`[WS] Starting CLI for ${sessionId} due to ${reason}`)
-    await conversationService.startSession(sessionId, workDir, sdkUrl, runtimeSettings)
+    await conversationService.startSession(sessionId, workDir, sdkUrl, startupSettings)
   })()
 
   sessionStartupPromises.set(sessionId, startup)
@@ -955,6 +1397,7 @@ async function ensureCliSessionStarted(
   } finally {
     if (sessionStartupPromises.get(sessionId) === startup) {
       sessionStartupPromises.delete(sessionId)
+      sessionStartupRuntimeVersions.delete(sessionId)
     }
   }
 }
@@ -964,6 +1407,13 @@ export function translateCliMessage(cliMsg: any, sessionId: string): ServerMessa
   switch (cliMsg.type) {
     case 'assistant': {
       if (cliMsg.error || cliMsg.isApiErrorMessage) {
+        // If the user requested stop, suppress API errors caused by the
+        // stream being interrupted (e.g. "Stream ended without receiving
+        // any events"). The result message handler also checks this flag,
+        // but the assistant error arrives first and would leak to the UI.
+        if (sessionStopRequested.has(sessionId)) {
+          return []
+        }
         const message = extractAssistantText(cliMsg) || cliMsg.error || 'Unknown API error'
         const code = typeof cliMsg.error === 'string' ? cliMsg.error : 'API_ERROR'
         streamState.lastApiError = { message, code }
@@ -971,6 +1421,9 @@ export function translateCliMessage(cliMsg: any, sessionId: string): ServerMessa
           type: 'error',
           message,
           code,
+          ...(typeof cliMsg.businessErrorCode === 'string'
+            ? { businessErrorCode: cliMsg.businessErrorCode }
+            : {}),
         }]
       }
 
@@ -1083,6 +1536,14 @@ export function translateCliMessage(cliMsg: any, sessionId: string): ServerMessa
         }
       }
 
+      const replayText = extractReplayUserText(cliMsg)
+      if (replayText) {
+        messages.push({
+          type: 'user_message_replay',
+          content: replayText,
+        })
+      }
+
       return messages
     }
 
@@ -1176,8 +1637,10 @@ export function translateCliMessage(cliMsg: any, sessionId: string): ServerMessa
               }
 
               // JSON parse failed — defer to the assistant message which
-              // carries the complete, already-parsed tool input.
-              console.warn(
+              // carries the complete, already-parsed tool input. This is the
+              // normal streaming partial-input case, not a fault: keep it at
+              // debug so it doesn't surface as a diagnostics warning.
+              console.debug(
                 `[WS] Tool input JSON parse failed for ${toolBlock.toolName} (${toolBlock.toolUseId}), deferring to assistant message`,
               )
               streamState.pendingToolBlocks.set(toolBlock.toolUseId, {
@@ -1274,6 +1737,9 @@ export function translateCliMessage(cliMsg: any, sessionId: string): ServerMessa
         const apiRetryMessage = toApiRetryServerMessage(cliMsg)
         return apiRetryMessage ? [apiRetryMessage] : []
       }
+      if (subtype === 'streaming_fallback') {
+        return [toStreamingFallbackServerMessage(cliMsg)]
+      }
       if (subtype === 'init') {
         // CLI 初始化完成 — 缓存 slash commands 并发送模型信息
         // NOTE: Do NOT send status:idle here — the CLI init fires while
@@ -1314,6 +1780,14 @@ export function translateCliMessage(cliMsg: any, sessionId: string): ServerMessa
             state: 'compacting',
             verb: 'Compacting conversation',
           }]
+        }
+        // CLI 在权限模式变化时也会 enqueue 一条 status 事件（status:null +
+        // permissionMode），用于把恢复后的真实权限（如 ExitPlanMode 退出 plan、
+        // Shift+Tab）广播给前端。它带 status:null 但**不是** thinking 信号，
+        // 必须在下面的 null→thinking 兜底之前拦截，否则字段会被丢弃，桌面端
+        // 选择器就会一直卡在"计划模式"。
+        if (typeof cliMsg.permissionMode === 'string') {
+          return [{ type: 'permission_mode_changed', mode: cliMsg.permissionMode }]
         }
         if (cliMsg.status == null) {
           return [{ type: 'status', state: 'thinking', verb: 'Thinking' }]
@@ -1392,6 +1866,34 @@ export function translateCliMessage(cliMsg: any, sessionId: string): ServerMessa
             verb: cliMsg.message || cliMsg.summary || cliMsg.description || 'Task in progress',
           },
         ]
+      }
+      if (subtype === 'agent_tool_activity') {
+        // Tool activity streamed from a background (async) agent. Re-emit as a
+        // normal tool_use_complete / tool_result carrying the parent Agent
+        // tool_use_id, so the desktop groups it under the agent card exactly
+        // like a synchronous subagent (childToolCallsByParent).
+        const activity = cliMsg.activity
+        const parentToolUseId =
+          typeof cliMsg.tool_use_id === 'string' ? cliMsg.tool_use_id : undefined
+        if (activity?.kind === 'tool_use') {
+          return [{
+            type: 'tool_use_complete',
+            toolName: activity.tool_name,
+            toolUseId: activity.tool_use_id,
+            input: activity.input,
+            parentToolUseId,
+          }]
+        }
+        if (activity?.kind === 'tool_result') {
+          return [{
+            type: 'tool_result',
+            toolUseId: activity.tool_use_id,
+            content: activity.content,
+            isError: activity.is_error === true,
+            parentToolUseId,
+          }]
+        }
+        return []
       }
       if (subtype === 'session_state_changed') {
         return [{
@@ -1476,6 +1978,21 @@ function toApiRetryServerMessage(cliMsg: any): ServerMessage | null {
   }
 }
 
+const STREAMING_FALLBACK_CAUSES: ReadonlySet<StreamingFallbackCause> = new Set([
+  'watchdog',
+  'stream_error',
+  '404_stream_creation',
+])
+
+function toStreamingFallbackServerMessage(cliMsg: any): ServerMessage {
+  // 未识别的 cause 兜底为 unknown 而不是丢消息：提示本身比成因重要。
+  const cause: StreamingFallbackCause =
+    typeof cliMsg.cause === 'string' && STREAMING_FALLBACK_CAUSES.has(cliMsg.cause as StreamingFallbackCause)
+      ? (cliMsg.cause as StreamingFallbackCause)
+      : 'unknown'
+  return { type: 'streaming_fallback', cause }
+}
+
 function sendMessage(ws: ServerWebSocket<WebSocketData>, message: ServerMessage) {
   ws.send(JSON.stringify(message))
 }
@@ -1484,10 +2001,91 @@ function sendError(ws: ServerWebSocket<WebSocketData>, message: string, code: st
   sendMessage(ws, { type: 'error', message, code })
 }
 
+/**
+ * Idle disconnect cleanup delay. A session waiting on a pending permission
+ * keeps the long 30-minute window so a transient renderer disconnect does not
+ * abort a prompt the user is about to answer. Otherwise we honor the
+ * user-configured grace period (issue #764).
+ */
 function getDisconnectCleanupDelayMs(sessionId: string): number {
   return conversationService.getPendingPermissionRequests(sessionId).length > 0
     ? PENDING_PERMISSION_DISCONNECT_CLEANUP_MS
-    : CLIENT_DISCONNECT_CLEANUP_MS
+    : getDisconnectGraceMs()
+}
+
+/**
+ * Whether the session is mid-turn (a user message was sent and no result has
+ * arrived yet). Such a turn must not be killed on disconnect.
+ */
+function isSessionTurnActive(sessionId: string): boolean {
+  return activeUserTurns.get(sessionId)?.messageSent === true
+}
+
+/**
+ * Whether a user turn has been registered for this session and not yet settled,
+ * INCLUDING the CLI-startup window before messageSent flips true. handleUserMessage
+ * registers the turn in its synchronous prefix (activeUserTurns.set), well before
+ * the message is actually sent. Unlike isSessionTurnActive, this is not blind to
+ * that window, so the prewarm idle timer can neither arm on nor fire against a
+ * session a user turn has already claimed — even when a concurrent
+ * prewarm_session/user_message flush inverts their ordering.
+ */
+function hasPendingOrActiveUserTurn(sessionId: string): boolean {
+  return activeUserTurns.has(sessionId)
+}
+
+/**
+ * Start the idle grace timer for a disconnected, idle session. If no client
+ * reconnects before it fires, the CLI subprocess is stopped.
+ */
+function scheduleDisconnectCleanup(sessionId: string): void {
+  computerUseApprovalService.cancelSession(sessionId)
+
+  const existing = sessionCleanupTimers.get(sessionId)
+  if (existing) clearTimeout(existing)
+
+  const cleanupDelayMs = getDisconnectCleanupDelayMs(sessionId)
+  const cleanupTimer = setTimeout(() => {
+    sessionCleanupTimers.delete(sessionId)
+    if (!hasActiveClients(sessionId)) {
+      console.log(`[WS] Session ${sessionId} not reconnected after ${cleanupDelayMs}ms, stopping CLI subprocess`)
+      conversationService.stopSession(sessionId)
+      cleanupSessionRuntimeState(sessionId)
+    }
+  }, cleanupDelayMs)
+  sessionCleanupTimers.set(sessionId, cleanupTimer)
+}
+
+/**
+ * Keep a still-running session alive after the last client leaves, and start
+ * the idle grace timer only once the current turn completes (issue #764). If a
+ * client reconnects first, cancelSessionDisconnectWatcher() tears this down.
+ */
+function watchTurnCompletionForCleanup(sessionId: string): void {
+  cancelSessionDisconnectWatcher(sessionId)
+
+  const onComplete = (cliMsg: any) => {
+    if (cliMsg?.type !== 'result') return
+    cancelSessionDisconnectWatcher(sessionId)
+    // The turn finished while still unobserved — fall back to the idle timer.
+    if (!hasActiveClients(sessionId)) {
+      scheduleDisconnectCleanup(sessionId)
+    }
+  }
+
+  conversationService.onOutput(sessionId, onComplete)
+  sessionDisconnectWatchers.set(sessionId, () => {
+    conversationService.removeOutputCallback(sessionId, onComplete)
+  })
+}
+
+/** Remove any pending turn-completion watcher for a session. */
+function cancelSessionDisconnectWatcher(sessionId: string): void {
+  const remove = sessionDisconnectWatchers.get(sessionId)
+  if (remove) {
+    remove()
+    sessionDisconnectWatchers.delete(sessionId)
+  }
 }
 
 function replayPendingPermissionRequests(
@@ -1717,6 +2315,64 @@ function isCompactSummaryMessageContent(content: unknown): content is string {
   )
 }
 
+function hasToolResultBlock(content: unknown): boolean {
+  return Array.isArray(content) &&
+    content.some((block) =>
+      Boolean(block) &&
+      typeof block === 'object' &&
+      (block as { type?: unknown }).type === 'tool_result')
+}
+
+function isInternalCommandBreadcrumb(content: unknown): boolean {
+  const textBlocks = typeof content === 'string'
+    ? [content]
+    : Array.isArray(content)
+      ? content.flatMap((block) => {
+        if (!block || typeof block !== 'object') return []
+        const typedBlock = block as { type?: unknown; text?: unknown }
+        return typedBlock.type === 'text' && typeof typedBlock.text === 'string'
+          ? [typedBlock.text]
+          : []
+      })
+      : []
+
+  return textBlocks.length > 0 && textBlocks.every((text) => {
+    const trimmed = text.trim()
+    return (
+      trimmed.includes(`<${COMMAND_NAME_TAG}>`) ||
+      trimmed.includes(`<${COMMAND_MESSAGE_TAG}>`) ||
+      trimmed.includes(`<${COMMAND_ARGS_TAG}>`) ||
+      trimmed.includes(`<${LOCAL_COMMAND_CAVEAT_TAG}>`)
+    )
+  })
+}
+
+function extractReplayUserText(cliMsg: any): string | null {
+  if (cliMsg?.isReplay !== true) return null
+  const content = cliMsg.message?.content
+  if (isInternalCommandBreadcrumb(content)) return null
+  if (isCompactSummaryMessageContent(content)) return null
+  if (hasToolResultBlock(content)) return null
+  if (extractLocalCommandOutput(content)) return null
+
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content
+        .flatMap((block) => {
+          if (!block || typeof block !== 'object') return []
+          const typedBlock = block as { type?: unknown; text?: unknown }
+          return typedBlock.type === 'text' && typeof typedBlock.text === 'string'
+            ? [typedBlock.text]
+            : []
+        })
+        .join('\n')
+      : ''
+
+  const trimmed = text.trim()
+  return trimmed || null
+}
+
 function addActiveClient(
   sessionId: string,
   ws: ServerWebSocket<WebSocketData>,
@@ -1787,9 +2443,6 @@ function bindClientSessionOutput(
       sendMessage(ws, msg)
     }
 
-    if (cliMsg.type === 'result') {
-      triggerTitleGeneration(ws, sessionId)
-    }
   }
 
   clientOutputCallbacks.set(ws, { sessionId, callback })
@@ -1815,7 +2468,23 @@ function isKnownRuntimeProviderId(
 }
 
 async function getRuntimeSettings(sessionId?: string): Promise<RuntimeSettings> {
-  const runtimeOverride = sessionId ? runtimeOverrides.get(sessionId) : undefined
+  const launchInfo = sessionId
+    ? await sessionService.getSessionLaunchInfo(sessionId).catch(() => null)
+    : null
+  const sessionPermissionMode = sessionId
+    ? launchInfo?.permissionMode ?? await getSessionPermissionMode(sessionId)
+    : undefined
+  const persistedRuntimeOverride =
+    launchInfo?.runtimeModelId
+      ? {
+          providerId: launchInfo.runtimeProviderId ?? null,
+          modelId: launchInfo.runtimeModelId,
+          ...(launchInfo.effortLevel ? { effort: launchInfo.effortLevel } : {}),
+        }
+      : undefined
+  const runtimeOverride = sessionId
+    ? runtimeOverrides.get(sessionId) ?? persistedRuntimeOverride
+    : undefined
   if (runtimeOverride) {
     if (typeof runtimeOverride.providerId === 'string') {
       const { providers } = await providerService.listProviders()
@@ -1825,27 +2494,37 @@ async function getRuntimeSettings(sessionId?: string): Promise<RuntimeSettings> 
           `[WS] Ignoring stale runtime provider id for ${sessionId}: ${runtimeOverride.providerId}`,
         )
         runtimeOverrides.delete(sessionId!)
-        return getDefaultRuntimeSettings()
+        const defaults = await getDefaultRuntimeSettings()
+        return {
+          ...defaults,
+          permissionMode: sessionPermissionMode ?? defaults.permissionMode,
+        }
       }
     }
 
     const userSettings = await settingsService.getUserSettings()
-    const effort =
-      typeof userSettings.effort === 'string' && userSettings.effort.trim()
-        ? userSettings.effort
-        : undefined
     const thinking = resolveDesktopThinkingMode(userSettings)
 
     return {
-      permissionMode: await settingsService.getPermissionMode().catch(() => undefined),
+      permissionMode: sessionPermissionMode ?? await settingsService.getPermissionMode().catch(() => undefined),
       model: runtimeOverride.modelId,
-      effort,
+      effort: runtimeOverride.effort,
       thinking,
       providerId: runtimeOverride.providerId,
     }
   }
 
-  return getDefaultRuntimeSettings()
+  const defaults = await getDefaultRuntimeSettings()
+  return {
+    ...defaults,
+    permissionMode: sessionPermissionMode ?? defaults.permissionMode,
+    effort: launchInfo?.effortLevel ?? defaults.effort,
+  }
+}
+
+async function getSessionPermissionMode(sessionId: string): Promise<string | undefined> {
+  const launchInfo = await sessionService.getSessionLaunchInfo(sessionId).catch(() => null)
+  return launchInfo?.permissionMode
 }
 
 async function getDefaultRuntimeSettings(): Promise<RuntimeSettings> {
@@ -1935,6 +2614,7 @@ async function buildSessionStartupDiagnosticMessage(
   if (runtimeOverride) {
     lines.push(`- runtimeOverride.providerId: ${runtimeOverride.providerId ?? '(official)'}`)
     lines.push(`- runtimeOverride.modelId: ${runtimeOverride.modelId}`)
+    lines.push(`- runtimeOverride.effort: ${runtimeOverride.effort ?? '(auto)'}`)
   } else {
     lines.push('- runtimeOverride: (none)')
   }
@@ -2103,8 +2783,34 @@ export function getActiveSessionIds(): string[] {
 export function __resetWebSocketHandlerStateForTests(): void {
   for (const timer of sessionCleanupTimers.values()) clearTimeout(timer)
   for (const timer of prewarmIdleTimers.values()) clearTimeout(timer)
+  for (const remove of sessionDisconnectWatchers.values()) remove()
   activeSessions.clear()
   clientOutputCallbacks.clear()
   sessionCleanupTimers.clear()
+  sessionDisconnectWatchers.clear()
+  prewarmPendingSessions.clear()
+  prewarmedSessions.clear()
   prewarmIdleTimers.clear()
+}
+
+export function __markPrewarmPendingForTests(sessionId: string): void {
+  prewarmPendingSessions.add(sessionId)
+}
+
+/** Test hook: mark a session as mid-turn so disconnect keeps the CLI alive. */
+export function __markActiveTurnForTests(sessionId: string): void {
+  activeUserTurns.set(sessionId, { messageSent: true })
+}
+
+/**
+ * Test hook: register a user turn still in the pre-send (messageSent:false)
+ * window — i.e. the CLI-startup window that isSessionTurnActive is blind to.
+ */
+export function __registerPendingUserTurnForTests(sessionId: string): void {
+  activeUserTurns.set(sessionId, { messageSent: false })
+}
+
+/** Test hook: arm the prewarm idle timer for a session, as markPrewarmed does. */
+export function __markPrewarmedForTests(sessionId: string): void {
+  markPrewarmed(sessionId)
 }

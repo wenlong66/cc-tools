@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { createOpenTargetService } from '../services/openTargetService.js'
 
 async function makeDir(prefix = 'cc-tools-open-target-') {
@@ -196,7 +196,7 @@ describe('openTargetService', () => {
     }
   })
 
-  it('rejects non-directory paths', async () => {
+  it('opens file paths in IDE targets', async () => {
     const dir = await makeDir()
     const file = join(dir, 'note.txt')
     await writeFile(file, 'not a directory')
@@ -206,7 +206,7 @@ describe('openTargetService', () => {
 
     try {
       await expect(service.openTarget({ targetId: 'vscode', path: file }))
-        .rejects.toMatchObject({ code: 'OPEN_TARGET_PATH_NOT_DIRECTORY' })
+        .resolves.toMatchObject({ ok: true, targetId: 'vscode', path: file })
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
@@ -245,6 +245,21 @@ describe('openTargetService', () => {
     }
   })
 
+  it('reveals files in Finder instead of opening them with the default app', async () => {
+    const dir = await makeDir()
+    const file = join(dir, 'note.txt')
+    await writeFile(file, 'contents')
+    const { service, launched } = createService('darwin')
+
+    try {
+      await service.openTarget({ targetId: 'finder', path: file })
+
+      expect(launched).toEqual([{ command: 'open', args: ['-R', file] }])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('opens Windows command-shim targets through the resolved executable', async () => {
     const dir = await makeDir()
     const commandPath = 'C:\\Users\\nanmi\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd'
@@ -278,6 +293,74 @@ describe('openTargetService', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it('selects files in Windows Explorer through the file-manager fallback', async () => {
+    const dir = await makeDir()
+    const file = join(dir, 'note.txt')
+    await writeFile(file, 'contents')
+    const { service, launched } = createService('win32')
+
+    try {
+      await service.openTarget({ targetId: 'explorer', path: file })
+
+      expect(launched).toEqual([{ command: 'explorer.exe', args: [`/select,${file}`] }])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('opens a file parent directory through the Linux file-manager fallback', async () => {
+    const dir = await makeDir()
+    const file = join(dir, 'note.txt')
+    await writeFile(file, 'contents')
+    const { service, launched } = createService('linux', {
+      commands: { 'xdg-open': true },
+    })
+
+    try {
+      await service.openTarget({ targetId: 'file-manager', path: file })
+
+      expect(launched).toEqual([{ command: 'xdg-open', args: [dir] }])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('expands a tilde path to the home directory before validation', async () => {
+    const { service, launched } = createService('darwin')
+
+    await expect(service.openTarget({ targetId: 'finder', path: '~' }))
+      .resolves.toMatchObject({ ok: true, path: homedir() })
+
+    expect(launched).toEqual([{ command: 'open', args: [homedir()] }])
+  })
+
+  it('reports missing tilde paths with the expanded home path', async () => {
+    const { service } = createService('darwin')
+    const missing = `~/cc-haha-missing-${Date.now()}/report.html`
+
+    const rejection = expect(service.openTarget({ targetId: 'finder', path: missing })).rejects
+    await rejection.toMatchObject({ code: 'OPEN_TARGET_PATH_MISSING' })
+    await rejection.toThrow(join(homedir(), missing.slice(2)))
+  })
+
+  it('expands Windows backslash tilde paths on win32', async () => {
+    const { service } = createService('win32')
+    const missing = `~\\cc-haha-missing-${Date.now()}\\report.html`
+
+    const rejection = expect(service.openTarget({ targetId: 'explorer', path: missing })).rejects
+    await rejection.toMatchObject({ code: 'OPEN_TARGET_PATH_MISSING' })
+    await rejection.toThrow(homedir() + missing.slice(1))
+  })
+
+  it('keeps backslash tilde names untouched on POSIX platforms', async () => {
+    const { service } = createService('darwin')
+
+    // On POSIX "~\..." is a regular (if odd) file name, not a tilde path.
+    const rejection = expect(service.openTarget({ targetId: 'finder', path: '~\\report.html' })).rejects
+    await rejection.toMatchObject({ code: 'OPEN_TARGET_PATH_MISSING' })
+    await rejection.toThrow('~\\report.html')
   })
 
   it('reports launch failures instead of returning success', async () => {

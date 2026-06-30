@@ -6,6 +6,7 @@ import { diffLines } from 'diff'
 import type { MessageEntry } from './sessionService.js'
 import type { FileHistorySnapshot } from '../../utils/fileHistory.js'
 import { getClaudeConfigHomeDir } from '../../utils/envUtils.js'
+import { isWithinRegisteredFilesystemRoot } from './filesystemAccessRoots.js'
 import {
   isSameOrInsidePathForPlatform,
   normalizeDriveRootPathForPlatform,
@@ -561,25 +562,27 @@ export class WorkspaceService {
       }
     }
 
-    const sessionDiff = await this.getSessionDiff(sessionId, resolvedPath.relativePath)
-    if (sessionDiff) {
-      return { state: 'ok', path: resolvedPath.relativePath, diff: sessionDiff }
-    }
-
-    const fileHistoryDiff = await this.getFileHistoryDiff(
-      sessionId,
-      resolvedPath.workspaceRoot,
-      resolvedPath.relativePath,
-    )
-    if (fileHistoryDiff) {
-      return { state: 'ok', path: resolvedPath.relativePath, diff: fileHistoryDiff }
-    }
-
     const repoInfo = await this.getGitRepoInfo(resolvedPath.workspaceRoot)
     if (repoInfo.kind === 'not_git_repo') {
+      const storedDiff = await this.getStoredWorkspaceDiff(
+        sessionId,
+        resolvedPath.workspaceRoot,
+        resolvedPath.relativePath,
+      )
+      if (storedDiff) {
+        return { state: 'ok', path: resolvedPath.relativePath, diff: storedDiff }
+      }
       return { state: 'not_git_repo', path: resolvedPath.relativePath }
     }
     if (repoInfo.kind === 'error') {
+      const storedDiff = await this.getStoredWorkspaceDiff(
+        sessionId,
+        resolvedPath.workspaceRoot,
+        resolvedPath.relativePath,
+      )
+      if (storedDiff) {
+        return { state: 'ok', path: resolvedPath.relativePath, diff: storedDiff }
+      }
       return {
         state: 'error',
         path: resolvedPath.relativePath,
@@ -589,6 +592,14 @@ export class WorkspaceService {
 
     const statusEntries = await this.getStatusEntries(repoInfo.repoRoot)
     if (statusEntries.kind === 'error') {
+      const storedDiff = await this.getStoredWorkspaceDiff(
+        sessionId,
+        resolvedPath.workspaceRoot,
+        resolvedPath.relativePath,
+      )
+      if (storedDiff) {
+        return { state: 'ok', path: resolvedPath.relativePath, diff: storedDiff }
+      }
       return {
         state: 'error',
         path: resolvedPath.relativePath,
@@ -612,6 +623,14 @@ export class WorkspaceService {
     )
 
     if (!statusEntry) {
+      const storedDiff = await this.getStoredWorkspaceDiff(
+        sessionId,
+        resolvedPath.workspaceRoot,
+        resolvedPath.relativePath,
+      )
+      if (storedDiff) {
+        return { state: 'ok', path: resolvedPath.relativePath, diff: storedDiff }
+      }
       return { state: 'missing', path: resolvedPath.relativePath }
     }
 
@@ -647,6 +666,21 @@ export class WorkspaceService {
     }
 
     return { state: 'ok', path: resolvedPath.relativePath, diff: diff.diff }
+  }
+
+  private async getStoredWorkspaceDiff(
+    sessionId: string,
+    workspaceRoot: string,
+    relativePath: string,
+  ): Promise<string | null> {
+    const sessionDiff = await this.getSessionDiff(sessionId, relativePath)
+    if (sessionDiff) return sessionDiff
+
+    return await this.getFileHistoryDiff(
+      sessionId,
+      workspaceRoot,
+      relativePath,
+    )
   }
 
   private async getSessionDiff(
@@ -1059,6 +1093,14 @@ export class WorkspaceService {
 
     const absolutePath = path.resolve(workDir, requestedPath || '.')
     if (!this.isWithinRoot(absolutePath, workDir)) {
+      // Files this session changed outside its workdir (the user pointed the
+      // model at an absolute path elsewhere, possibly another drive) are
+      // registered as access roots when the turn checkpoint is built. Preview
+      // those by absolute path — they have no workspace-relative form — instead
+      // of rejecting them as out-of-sandbox.
+      if (this.isAbsoluteRequestPath(requestedPath) && isWithinRegisteredFilesystemRoot(absolutePath)) {
+        return this.resolveOutsideWorkspacePath(absolutePath, requestedPath)
+      }
       throw new Error(`Path is outside workspace: ${requestedPath}`)
     }
 
@@ -1077,6 +1119,33 @@ export class WorkspaceService {
       relativePath: this.normalizeRelativePath(
         path.relative(workspaceRoot.workspaceRoot, absolutePath),
       ),
+    }
+  }
+
+  /**
+   * Resolve a path that sits OUTSIDE the session workdir but inside a registered
+   * access root (a file this turn actually changed elsewhere). Such a file has no
+   * meaningful workspace-relative form, so it is keyed by its absolute request
+   * path and rooted at its own containing directory — enough for `readFile`
+   * (and a best-effort git diff if that directory happens to be a repo).
+   */
+  private async resolveOutsideWorkspacePath(
+    absolutePath: string,
+    requestedPath: string,
+  ): Promise<WorkspacePathResolution> {
+    let canonicalTargetPath = absolutePath
+    try {
+      canonicalTargetPath = await fs.realpath(absolutePath)
+    } catch {
+      // File may not exist yet, or realpath is unavailable — keep the raw path.
+    }
+    return {
+      absolutePath,
+      requestedPath,
+      workspaceRoot: path.dirname(absolutePath),
+      canonicalWorkspaceRoot: path.dirname(canonicalTargetPath),
+      canonicalTargetPath,
+      relativePath: this.normalizeRequestedPath(requestedPath),
     }
   }
 
@@ -1154,6 +1223,11 @@ export class WorkspaceService {
 
   private isWithinRoot(targetPath: string, rootPath: string): boolean {
     return isSameOrInsidePathForPlatform(targetPath, rootPath)
+  }
+
+  private isAbsoluteRequestPath(requestedPath: string): boolean {
+    const pathApi = process.platform === 'win32' ? path.win32 : path
+    return pathApi.isAbsolute(normalizeDriveRootPathForPlatform(requestedPath))
   }
 
   private normalizeRelativePath(filePath: string): string {

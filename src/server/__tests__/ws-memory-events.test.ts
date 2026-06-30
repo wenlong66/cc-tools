@@ -1,11 +1,65 @@
 import { describe, expect, it } from 'bun:test'
 import {
   createCurrentTurnLocalCommandForwarder,
+  shouldRestartForPermissionMode,
   translateCliMessage,
 } from '../ws/handler.js'
 import { parseSlashCommand } from '../../utils/slashCommandParsing.js'
 
 describe('WebSocket memory events', () => {
+  it('forwards assistant business error codes to the desktop client', () => {
+    expect(translateCliMessage({
+      type: 'assistant',
+      error: 'invalid_request',
+      isApiErrorMessage: true,
+      businessErrorCode: 'image_unsupported',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'This model does not support images.' }],
+      },
+    }, 'session-1')).toEqual([
+      {
+        type: 'error',
+        message: 'This model does not support images.',
+        code: 'invalid_request',
+        businessErrorCode: 'image_unsupported',
+      },
+    ])
+  })
+
+  it('does not replay internal slash-command breadcrumbs as user messages', () => {
+    expect(translateCliMessage({
+      type: 'user',
+      isReplay: true,
+      message: {
+        role: 'user',
+        content: [
+          '<command-message>agent</command-message>',
+          '<command-name>/agent</command-name>',
+          '<command-args>Plan 222</command-args>',
+        ].join('\n'),
+      },
+    }, 'session-1')).toEqual([])
+
+    expect(translateCliMessage({
+      type: 'user',
+      isReplay: true,
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: [
+              '<command-message>agent</command-message>',
+              '<command-name>/agent</command-name>',
+              '<command-args>Plan 222</command-args>',
+            ].join('\n'),
+          },
+        ],
+      },
+    }, 'session-1')).toEqual([])
+  })
+
   it('forwards CLI memory_saved system messages to the desktop client', () => {
     const messages = translateCliMessage(
       {
@@ -72,6 +126,45 @@ describe('WebSocket AskUserQuestion events', () => {
   })
 })
 
+describe('WebSocket queued user replay events', () => {
+  it('forwards ordinary queued user replays to the desktop client', () => {
+    expect(translateCliMessage({
+      type: 'user',
+      isReplay: true,
+      message: {
+        role: 'user',
+        content: 'please adjust the current direction',
+      },
+    }, 'session-1')).toEqual([
+      {
+        type: 'user_message_replay',
+        content: 'please adjust the current direction',
+      },
+    ])
+  })
+
+  it('does not turn replayed tool results into user text messages', () => {
+    expect(translateCliMessage({
+      type: 'user',
+      isReplay: true,
+      message: {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'tool-1', content: 'ok' },
+        ],
+      },
+    }, 'session-1')).toEqual([
+      {
+        type: 'tool_result',
+        toolUseId: 'tool-1',
+        content: 'ok',
+        isError: false,
+        parentToolUseId: undefined,
+      },
+    ])
+  })
+})
+
 describe('WebSocket compact events', () => {
   it('forwards CLI compacting status to the desktop client', () => {
     expect(translateCliMessage({
@@ -103,6 +196,29 @@ describe('WebSocket compact events', () => {
       subtype: 'status',
       status: 'warming',
     }, 'session-1')).toEqual([])
+  })
+
+  it('forwards CLI permission-mode broadcasts instead of dropping them as thinking', () => {
+    // CLI 在退出 plan 模式后恢复权限时会广播一条 status:null + permissionMode
+    // 的事件。它必须被翻译成 permission_mode_changed，而不是被 null→thinking
+    // 兜底吞掉 —— 这正是桌面端选择器卡在"计划模式"的根因。
+    expect(translateCliMessage({
+      type: 'system',
+      subtype: 'status',
+      status: null,
+      permissionMode: 'bypassPermissions',
+    }, 'session-1')).toEqual([
+      { type: 'permission_mode_changed', mode: 'bypassPermissions' },
+    ])
+
+    // 普通 thinking（无 permissionMode）仍走原路径，不受影响。
+    expect(translateCliMessage({
+      type: 'system',
+      subtype: 'status',
+      status: null,
+    }, 'session-1')).toEqual([
+      { type: 'status', state: 'thinking', verb: 'Thinking' },
+    ])
   })
 
   it('forwards compact summaries as system notifications instead of user chat bubbles', () => {
@@ -140,6 +256,32 @@ describe('WebSocket compact events', () => {
   })
 })
 
+describe('WebSocket permission mode restart policy', () => {
+  it('restarts the CLI only when entering bypassPermissions', () => {
+    // 进入 bypass 需要带 --dangerously-skip-permissions 重启子进程。
+    expect(shouldRestartForPermissionMode('default', 'bypassPermissions')).toBe(true)
+    expect(shouldRestartForPermissionMode('plan', 'bypassPermissions')).toBe(true)
+    expect(shouldRestartForPermissionMode('acceptEdits', 'bypassPermissions')).toBe(true)
+  })
+
+  it('does NOT restart when leaving bypassPermissions for a stricter mode', () => {
+    // 从 bypass 切出不重启——否则会冲掉进程内 prePlanMode，导致 ExitPlanMode 后
+    // 恢复成 default 而非进入 plan 前的 bypassPermissions。这正是桌面端退出 plan
+    // 权限回不到 bypass 的根因。
+    expect(shouldRestartForPermissionMode('bypassPermissions', 'plan')).toBe(false)
+    expect(shouldRestartForPermissionMode('bypassPermissions', 'default')).toBe(false)
+    expect(shouldRestartForPermissionMode('bypassPermissions', 'acceptEdits')).toBe(false)
+  })
+
+  it('does not restart for non-bypass transitions or no-op changes', () => {
+    expect(shouldRestartForPermissionMode('default', 'plan')).toBe(false)
+    expect(shouldRestartForPermissionMode('plan', 'acceptEdits')).toBe(false)
+    // 同模式（含 bypass→bypass）是 no-op，不重启。
+    expect(shouldRestartForPermissionMode('bypassPermissions', 'bypassPermissions')).toBe(false)
+    expect(shouldRestartForPermissionMode('plan', 'plan')).toBe(false)
+  })
+})
+
 describe('WebSocket API retry events', () => {
   it('forwards CLI api_retry messages as structured retry status', () => {
     expect(translateCliMessage({
@@ -159,6 +301,45 @@ describe('WebSocket API retry events', () => {
         errorStatus: 503,
         errorType: 'server_error',
       },
+    ])
+  })
+
+  it('forwards CLI streaming_fallback messages with a recognized cause', () => {
+    // 形状对齐 QueryEngine 的 SDK 输出：{type:'system', subtype:'streaming_fallback', cause, ...}
+    expect(translateCliMessage({
+      type: 'system',
+      subtype: 'streaming_fallback',
+      cause: 'watchdog',
+      session_id: 'session-1',
+      uuid: 'uuid-1',
+    }, 'session-1')).toEqual([
+      { type: 'streaming_fallback', cause: 'watchdog' },
+    ])
+
+    expect(translateCliMessage({
+      type: 'system',
+      subtype: 'streaming_fallback',
+      cause: '404_stream_creation',
+    }, 'session-1')).toEqual([
+      { type: 'streaming_fallback', cause: '404_stream_creation' },
+    ])
+  })
+
+  it('normalizes unrecognized streaming_fallback causes to unknown instead of dropping the event', () => {
+    // 新 CLI + 旧枚举：提示本身比成因重要，不能丢消息。
+    expect(translateCliMessage({
+      type: 'system',
+      subtype: 'streaming_fallback',
+      cause: 'some_future_cause',
+    }, 'session-1')).toEqual([
+      { type: 'streaming_fallback', cause: 'unknown' },
+    ])
+
+    expect(translateCliMessage({
+      type: 'system',
+      subtype: 'streaming_fallback',
+    }, 'session-1')).toEqual([
+      { type: 'streaming_fallback', cause: 'unknown' },
     ])
   })
 })
@@ -374,6 +555,7 @@ describe('WebSocket goal command events', () => {
       content: 'late unrelated output',
     })).toBe(false)
   })
+
 })
 
 describe('WebSocket stream event translation', () => {

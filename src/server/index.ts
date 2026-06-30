@@ -15,6 +15,10 @@ import { handleProxyRequest } from './proxy/handler.js'
 import { ProviderService } from './services/providerService.js'
 import { handleCCToolsOAuthCallback } from './api/cctools-oauth.js'
 import { handleCCToolsOpenAIOAuthCallback } from './api/cctools-openai-oauth.js'
+import { handlePreviewFs } from './api/previewFs.js'
+import { handleLocalFile } from './api/localFile.js'
+import { sessionService } from './services/sessionService.js'
+import { conversationService } from './services/conversationService.js'
 import { OPENAI_CODEX_REDIRECT_PATH } from '../services/openaiAuth/client.js'
 import { ensureDesktopCliLauncherInstalled } from './services/desktopCliLauncherService.js'
 import { enableConfigs } from '../utils/config.js'
@@ -23,6 +27,7 @@ import { ensurePersistentStorageUpgraded } from './services/persistentStorageMig
 import { handleStaticH5Request } from './staticH5.js'
 import { classifyH5Request, shouldBlockDisabledH5Access, shouldRequireH5Token } from './h5AccessPolicy.js'
 import { H5AccessService } from './services/h5AccessService.js'
+import { refreshDisconnectGraceMs } from './ws/disconnectGraceConfig.js'
 
 function readArgValue(flag: string): string | undefined {
   const args = process.argv.slice(2)
@@ -121,9 +126,17 @@ function originFromUrl(value: string | null): string | null {
 
 export function startServer(port = PORT, host = HOST) {
   enableConfigs()
-  diagnosticsService.installConsoleCapture()
-  diagnosticsService.installProcessCapture()
-  ProviderService.setServerPort(port)
+  // Warm the synchronous disconnect-grace cache from managed settings so the
+  // first client disconnect honors the configured value (issue #764).
+  void refreshDisconnectGraceMs()
+  // Don't hijack the global console / process handlers under `bun test`:
+  // a test that boots the server would otherwise route every test-side
+  // console.error/warn into the user's real diagnostics file.
+  if (process.env.NODE_ENV !== 'test') {
+    diagnosticsService.installConsoleCapture()
+    diagnosticsService.installProcessCapture()
+  }
+  let serverPort = port
   const localConnectHost =
     host === '0.0.0.0' || host === '127.0.0.1' || host === 'localhost'
       ? '127.0.0.1'
@@ -221,7 +234,7 @@ export function startServer(port = PORT, host = HOST) {
               connectedAt: Date.now(),
               channel: 'client',
               sdkToken: null,
-              serverPort: port,
+              serverPort,
               serverHost: localConnectHost,
             },
           })
@@ -256,7 +269,7 @@ export function startServer(port = PORT, host = HOST) {
               connectedAt: Date.now(),
               channel: 'sdk',
               sdkToken: url.searchParams.get('token'),
-              serverPort: port,
+              serverPort,
               serverHost: localConnectHost,
             },
           })
@@ -273,6 +286,59 @@ export function startServer(port = PORT, host = HOST) {
           url.pathname === '/callback/openai'
         ) {
           return handleCCToolsOpenAIOAuthCallback(url)
+        }
+
+        // Preview filesystem — serve sandboxed workspace files for a session.
+        if (url.pathname.startsWith('/preview-fs/')) {
+          if (cors.rejected) {
+            return corsRejectedResponse(cors)
+          }
+
+          if (authRequired) {
+            const authError = await requireH5Token(req)
+            if (authError) {
+              return withCors(authError, cors)
+            }
+          } else if (forceAuth) {
+            const authError = await requireAuth(req)
+            if (authError) {
+              return withCors(authError, cors)
+            }
+          }
+
+          const response = await handlePreviewFs(
+            url,
+            async (sessionId) =>
+              conversationService.getSessionWorkDir(sessionId) ||
+              (await sessionService.getSessionWorkDir(sessionId)) ||
+              null,
+            req.headers,
+          )
+          return withCors(response, cors)
+        }
+
+        // Local filesystem — serve an ABSOLUTE local file ($HOME/tmp/registered
+        // roots sandbox) so `file://` links / AI-emitted absolute paths open in
+        // the in-app browser. Gated identically to /preview-fs above.
+        if (url.pathname.startsWith('/local-file/')) {
+          if (cors.rejected) {
+            return corsRejectedResponse(cors)
+          }
+
+          if (authRequired) {
+            const authError = await requireH5Token(req)
+            if (authError) {
+              return withCors(authError, cors)
+            }
+          } else if (forceAuth) {
+            const authError = await requireAuth(req)
+            if (authError) {
+              return withCors(authError, cors)
+            }
+          }
+
+          const response = await handleLocalFile(url, req.headers)
+          return withCors(response, cors)
         }
 
         // REST API
@@ -371,6 +437,8 @@ export function startServer(port = PORT, host = HOST) {
 
       websocket: handleWebSocket,
     })
+    serverPort = server.port
+    ProviderService.setServerPort(serverPort)
   } catch (error) {
     const message = error instanceof Error && error.message
       ? error.message
@@ -378,7 +446,7 @@ export function startServer(port = PORT, host = HOST) {
     throw new Error(message, { cause: error })
   }
 
-  // Start watching ~/.cc-tools/teams/ for real-time WebSocket push
+  // Start watching ~/.claude/teams/ for real-time WebSocket push
   teamWatcher.start()
 
   // Start the cron scheduler to execute scheduled tasks
@@ -391,33 +459,61 @@ export function startServer(port = PORT, host = HOST) {
     )
   })
 
-  console.log(`[Server] Claude Code API server running at http://${host}:${port}`)
+  console.log(`[Server] Claude Code API server running at http://${host}:${serverPort}`)
   return server
 }
 
 // ─── Graceful shutdown: kill all CLI subprocesses on exit ────────────────────
-import { conversationService } from './services/conversationService.js'
 
-function cleanupAllSessions() {
+let shutdownInProgress: Promise<void> | null = null
+
+export async function stopServerRuntimeForShutdown(
+  options: { waitForCli?: boolean } = {},
+): Promise<void> {
+  teamWatcher.stop()
+  cronScheduler.stop()
+
   const active = conversationService.getActiveSessions()
   if (active.length > 0) {
     console.log(`[Server] Shutting down — killing ${active.length} CLI subprocess(es)`)
-    for (const sessionId of active) {
-        conversationService.stopSession(sessionId)
+    if (options.waitForCli === false) {
+      conversationService.stopAllSessions()
+    } else {
+      await conversationService.stopAllSessionsAndWait()
     }
   }
 }
 
+function cleanupAllSessions() {
+  void stopServerRuntimeForShutdown({ waitForCli: false })
+}
+
+async function cleanupAllSessionsAndWait() {
+  await stopServerRuntimeForShutdown({ waitForCli: true })
+}
+
+function shutdownAndExit(signal: 'SIGTERM' | 'SIGINT', exitCode: number) {
+  if (shutdownInProgress) return
+
+  shutdownInProgress = (async () => {
+    console.log(`[Server] Received ${signal}`)
+    await cleanupAllSessionsAndWait()
+    process.exit(exitCode)
+  })().catch((error) => {
+    console.error(
+      `[Server] ${signal} shutdown cleanup failed:`,
+      error instanceof Error ? error.message : error,
+    )
+    process.exit(1)
+  })
+}
+
 process.on('SIGTERM', () => {
-  console.log('[Server] Received SIGTERM')
-  cleanupAllSessions()
-  process.exit(0)
+  shutdownAndExit('SIGTERM', 0)
 })
 
 process.on('SIGINT', () => {
-  console.log('[Server] Received SIGINT')
-  cleanupAllSessions()
-  process.exit(0)
+  shutdownAndExit('SIGINT', 0)
 })
 
 process.on('exit', () => {

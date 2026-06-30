@@ -30,7 +30,6 @@ export type Toast = {
 
 export type SettingsTab =
   | 'providers'
-  | 'permissions'
   | 'activity'
   | 'general'
   | 'h5Access'
@@ -42,6 +41,7 @@ export type SettingsTab =
   | 'memory'
   | 'plugins'
   | 'computerUse'
+  | 'trace'
   | 'diagnostics'
   | 'about'
 

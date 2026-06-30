@@ -4,6 +4,8 @@ import {
   SCHEDULED_TAB_ID,
   SETTINGS_TAB_ID,
   TERMINAL_TAB_PREFIX,
+  TRACE_TAB_PREFIX,
+  WORKBENCH_TAB_PREFIX,
   useTabStore,
   type TabType,
 } from '../stores/tabStore'
@@ -23,13 +25,15 @@ import { MessageList } from '../components/chat/MessageList'
 import { ChatInput } from '../components/chat/ChatInput'
 import { ComputerUsePermissionModal } from '../components/chat/ComputerUsePermissionModal'
 import { SessionTaskBar } from '../components/chat/SessionTaskBar'
-import { WorkspacePanel } from '../components/workspace/WorkspacePanel'
+import { WorkbenchPanel } from '../components/workbench/WorkbenchPanel'
 import { TeamStatusBar } from '../components/teams/TeamStatusBar'
 import { TerminalSettings } from './TerminalSettings'
 import type { SessionListItem } from '../types/session'
 import type { ActiveGoalState } from '../types/chat'
 import { useMobileViewport } from '../hooks/useMobileViewport'
-import { isTauriRuntime } from '../lib/desktopRuntime'
+import { isDesktopRuntime } from '../lib/desktopRuntime'
+import { formatTokenCount } from '../lib/formatTokenCount'
+import { publicAssetPath } from '../lib/publicAsset'
 
 const TASK_POLL_INTERVAL_MS = 1000
 const WORKSPACE_RESIZE_STEP = 32
@@ -43,7 +47,9 @@ function isSessionTabState(activeTabId: string | null, activeTabType: TabType | 
   if (activeTabType) return false
   return activeTabId !== SETTINGS_TAB_ID &&
     activeTabId !== SCHEDULED_TAB_ID &&
-    !activeTabId.startsWith(TERMINAL_TAB_PREFIX)
+    !activeTabId.startsWith(TERMINAL_TAB_PREFIX) &&
+    !activeTabId.startsWith(TRACE_TAB_PREFIX) &&
+    !activeTabId.startsWith(WORKBENCH_TAB_PREFIX)
 }
 
 function getSessionTerminalCwd(session: SessionListItem | undefined) {
@@ -256,7 +262,7 @@ function TerminalResizeHandle() {
 }
 
 export function ActiveSession() {
-  const isMobileLayout = useMobileViewport() && !isTauriRuntime()
+  const isMobileLayout = useMobileViewport() && !isDesktopRuntime()
   const activeTabId = useTabStore((s) => s.activeTabId)
   const activeTabType = useTabStore((s) => s.tabs.find((tab) => tab.sessionId === s.activeTabId)?.type ?? null)
   const sessions = useSessionStore((s) => s.sessions)
@@ -276,11 +282,13 @@ export function ActiveSession() {
   const memberInfo = useTeamStore((s) => activeTabId ? s.getMemberBySessionId(activeTabId) : null)
   const activeTeam = useTeamStore((s) => s.activeTeam)
   const isMemberSession = !!memberInfo
-  const showWorkspacePanel = useWorkspacePanelStore((state) =>
+  const showWorkbench = useWorkspacePanelStore((state) =>
     activeTabId && isSessionTabState(activeTabId, activeTabType) && !isMemberSession && !isMobileLayout
       ? state.isPanelOpen(activeTabId)
       : false,
   )
+  const showRightPanel = showWorkbench
+  const rightPanelWidth = useWorkspacePanelStore((state) => state.width)
   const showTerminalPanel = useTerminalPanelStore((state) =>
     activeTabId && isSessionTabState(activeTabId, activeTabType) && !isMemberSession && !isMobileLayout
       ? state.isPanelOpen(activeTabId)
@@ -329,6 +337,19 @@ export function ActiveSession() {
   const streamingText = sessionState?.streamingText ?? ''
   const activeGoal = sessionState?.activeGoal ?? null
   const isEmpty = messages.length === 0 && !streamingText && (session?.messageCount ?? 0) === 0
+  const compactEmptyHero = isEmpty && showTerminalPanel
+  const isHistoryLoading =
+    !isMemberSession &&
+    (session?.messageCount ?? 0) > 0 &&
+    messages.length === 0 &&
+    sessionState?.historyStatus === 'loading'
+  const historyError =
+    !isMemberSession &&
+    (session?.messageCount ?? 0) > 0 &&
+    messages.length === 0 &&
+    sessionState?.historyStatus === 'error'
+      ? sessionState.historyError || t('session.historyLoadFailed')
+      : null
   const visibleMessageCount = messages.length > 0 ? messages.length : session?.messageCount ?? 0
 
   const isActive = chatState !== 'idle' ||
@@ -352,7 +373,7 @@ export function ActiveSession() {
       <div data-testid="active-session-content-row" className="flex min-h-0 min-w-0 flex-1">
         <div
           data-testid="active-session-chat-column"
-          className={`flex flex-col ${showWorkspacePanel ? CHAT_COLUMN_WITH_WORKSPACE_CLASS : isMobileLayout ? 'min-w-0 flex-1' : 'min-w-[360px] flex-1'}`}
+          className={`flex min-h-0 flex-col ${showRightPanel ? CHAT_COLUMN_WITH_WORKSPACE_CLASS : isMobileLayout ? 'min-w-0 flex-1' : 'min-w-[360px] flex-1'}`}
         >
           {isMemberSession && (
             <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface-container)]">
@@ -400,11 +421,17 @@ export function ActiveSession() {
           )}
 
           {isEmpty ? (
-            <div className="flex flex-1 flex-col items-center justify-center p-8 pb-32">
+            <div
+              data-testid="empty-session-hero"
+              className={[
+                'flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-8 pt-8',
+                compactEmptyHero ? 'pb-6' : 'pb-32',
+              ].join(' ')}
+            >
               <div className="flex max-w-md flex-col items-center text-center">
                 {isMemberSession ? (
                   <>
-                    <span className="material-symbols-outlined text-[48px] mb-4 text-[var(--color-text-tertiary)]">smart_toy</span>
+                    <span className={`material-symbols-outlined mb-4 text-[var(--color-text-tertiary)] ${compactEmptyHero ? 'text-[36px]' : 'text-[48px]'}`}>smart_toy</span>
                     <p className="text-[var(--color-text-secondary)]">
                       {memberInfo?.status === 'running'
                         ? `${memberInfo.role} ${t('teams.working')}`
@@ -413,11 +440,15 @@ export function ActiveSession() {
                   </>
                 ) : (
                   <>
-                    <img src="/app-icon.png" alt="CC-Tools" className="mb-6 h-24 w-24" />
-                    <h1 className="mb-2 text-3xl font-extrabold tracking-tight text-[var(--color-text-primary)]" style={{ fontFamily: 'var(--font-headline)' }}>
+                    <img
+                      src={publicAssetPath('app-icon.png')}
+                      alt="CC-Tools"
+                      className={compactEmptyHero ? 'mb-4 h-16 w-16' : 'mb-6 h-24 w-24'}
+                    />
+                    <h1 className={`${compactEmptyHero ? 'mb-1 text-2xl' : 'mb-2 text-3xl'} font-extrabold tracking-tight text-[var(--color-text-primary)]`} style={{ fontFamily: 'var(--font-headline)' }}>
                       {t('empty.title')}
                     </h1>
-                    <p className="mx-auto max-w-xs text-[var(--color-text-secondary)]" style={{ fontFamily: 'var(--font-body)' }}>
+                    <p className={`mx-auto max-w-xs text-[var(--color-text-secondary)] ${compactEmptyHero ? 'text-sm' : ''}`} style={{ fontFamily: 'var(--font-body)' }}>
                       {t('empty.subtitle')}
                     </p>
                   </>
@@ -429,24 +460,26 @@ export function ActiveSession() {
               {!isMemberSession && !isMobileLayout && (
                 <div
                   className={
-                    showWorkspacePanel
+                    showRightPanel
                       ? 'flex w-full items-center border-b border-[var(--color-border)]/70 px-4 py-3'
                       : 'w-full border-b border-outline-variant/10 px-4 py-3'
                   }
                 >
-                  <div className={showWorkspacePanel ? 'min-w-0 flex-1' : 'mx-auto w-full max-w-[860px] min-w-0'}>
-                    <h1
-                      className={
-                        showWorkspacePanel
-                          ? 'truncate text-[15px] font-bold font-headline leading-tight text-on-surface'
-                          : 'text-lg font-bold font-headline text-on-surface leading-tight'
-                      }
-                    >
-                      {session?.title || t('session.untitled')}
-                    </h1>
+                  <div className={showRightPanel ? 'min-w-0 flex-1' : 'mx-auto w-full max-w-[860px] min-w-0'}>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <h1
+                        className={
+                          showRightPanel
+                            ? 'min-w-0 flex-1 truncate text-[15px] font-bold font-headline leading-tight text-on-surface'
+                            : 'min-w-0 flex-1 text-lg font-bold font-headline text-on-surface leading-tight'
+                        }
+                      >
+                        {session?.title || t('session.untitled')}
+                      </h1>
+                    </div>
                     <div
                       className={
-                        showWorkspacePanel
+                        showRightPanel
                           ? 'mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[10px] font-medium text-outline'
                           : 'flex items-center gap-2 text-[10px] text-outline font-medium mt-1'
                       }
@@ -460,7 +493,9 @@ export function ActiveSession() {
                       {totalTokens > 0 && (
                         <>
                           <span className="text-[var(--color-outline)]">·</span>
-                          <span>{totalTokens.toLocaleString()} t</span>
+                          <span title={t('common.tokens', { count: totalTokens.toLocaleString() })}>
+                            {t('common.tokens', { count: formatTokenCount(totalTokens) })}
+                          </span>
                         </>
                       )}
                       {lastUpdated && (
@@ -469,7 +504,7 @@ export function ActiveSession() {
                           <span className="truncate">{t('session.lastUpdated', { time: lastUpdated })}</span>
                         </>
                       )}
-                      {!showWorkspacePanel && visibleMessageCount > 0 && (
+                      {!showRightPanel && visibleMessageCount > 0 && (
                         <>
                           <span className="text-[var(--color-outline)]">·</span>
                           <span>{t('session.messages', { count: visibleMessageCount })}</span>
@@ -487,13 +522,24 @@ export function ActiveSession() {
                     <ActiveGoalStrip
                       goal={activeGoal}
                       isRunning={isActive}
-                      compact={showWorkspacePanel}
+                      compact={showRightPanel}
                     />
                   </div>
                 </div>
               )}
 
-              <MessageList compact={showWorkspacePanel} />
+              {isHistoryLoading ? (
+                <div role="status" className="flex flex-1 items-center justify-center p-8 text-sm text-[var(--color-text-secondary)]">
+                  <span className="material-symbols-outlined mr-2 animate-spin text-[18px]">progress_activity</span>
+                  {t('common.loading')}
+                </div>
+              ) : historyError ? (
+                <div role="alert" className="flex flex-1 items-center justify-center p-8 text-sm text-[var(--color-error)]">
+                  {historyError}
+                </div>
+              ) : (
+                <MessageList compact={showRightPanel} />
+              )}
             </>
           )}
 
@@ -502,15 +548,15 @@ export function ActiveSession() {
           <TeamStatusBar />
 
           <ChatInput
-            variant={isEmpty && !isMemberSession && !showWorkspacePanel ? 'hero' : 'default'}
-            compact={showWorkspacePanel}
+            variant={isEmpty && !isMemberSession && !showRightPanel ? 'hero' : 'default'}
+            compact={showRightPanel}
           />
 
           {terminalPanelRuntimeId && activeTabId ? (
             <div
               data-testid="session-terminal-panel"
               className={[
-                'flex shrink-0 flex-col border-t border-[var(--color-border)] bg-[var(--color-surface-container-lowest)]',
+                'flex min-h-0 shrink-0 flex-col border-t border-[var(--color-border)] bg-[var(--color-surface-container-lowest)]',
                 showTerminalPanel ? '' : 'hidden',
               ].join(' ')}
               style={{ height: showTerminalPanel ? terminalPanelHeight : 0 }}
@@ -534,10 +580,16 @@ export function ActiveSession() {
           ) : null}
         </div>
 
-        {showWorkspacePanel ? (
+        {showWorkbench ? (
           <>
             <WorkspaceResizeHandle />
-            <WorkspacePanel sessionId={activeTabId} />
+            <aside
+              data-testid="workbench-panel"
+              className="flex h-full shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)]"
+              style={{ width: rightPanelWidth, maxWidth: '62%', minWidth: 'min(420px, 54%)' }}
+            >
+              <WorkbenchPanel sessionId={activeTabId} />
+            </aside>
           </>
         ) : null}
       </div>

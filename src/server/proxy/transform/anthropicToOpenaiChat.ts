@@ -14,22 +14,35 @@ import type {
   OpenAIToolCall,
   OpenAITool,
 } from './types.js'
+import { stripLeadingBillingHeader } from './billingHeader.js'
+
+type OpenAIChatImageContentMode = 'vision' | 'text_only'
+
+type OpenAIChatTransformOptions = {
+  roundTripReasoningContent?: boolean
+  passThinkingToggle?: boolean
+  imageContentMode?: OpenAIChatImageContentMode
+}
+
+const OMITTED_IMAGE_TEXT = '[Image omitted: this OpenAI-compatible chat endpoint only supports text content.]'
 
 /**
  * Convert Anthropic Messages request to OpenAI Chat Completions request.
  */
 export function anthropicToOpenaiChat(
   body: AnthropicRequest,
-  options: { roundTripReasoningContent?: boolean; passThinkingToggle?: boolean } = {},
+  options: OpenAIChatTransformOptions = {},
 ): OpenAIChatRequest {
   const messages: OpenAIChatMessage[] = []
 
-  // Convert system prompt
+  // Convert system prompt, minus the leading billing attribution: its
+  // rotating cch= signature would change the prefix every turn and defeat
+  // upstream prompt caching.
   if (body.system) {
-    if (typeof body.system === 'string') {
-      messages.push({ role: 'system', content: body.system })
-    } else if (Array.isArray(body.system)) {
-      const text = body.system.map((b) => b.text).join('\n')
+    const text = typeof body.system === 'string'
+      ? stripLeadingBillingHeader(body.system)
+      : body.system.map((b) => stripLeadingBillingHeader(b.text)).filter(Boolean).join('\n')
+    if (text) {
       messages.push({ role: 'system', content: text })
     }
   }
@@ -43,7 +56,12 @@ export function anthropicToOpenaiChat(
   const result: OpenAIChatRequest = {
     model: body.model,
     messages,
-    stream: body.stream,
+    stream: body.stream === true,
+  }
+
+  // Many OpenAI-compatible servers omit usage on streams unless asked.
+  if (result.stream) {
+    result.stream_options = { include_usage: true }
   }
 
   // max_tokens — omit to let upstream provider use its own default/max.
@@ -99,7 +117,7 @@ export function anthropicToOpenaiChat(
 function convertMessage(
   msg: AnthropicMessage,
   output: OpenAIChatMessage[],
-  options: { roundTripReasoningContent?: boolean },
+  options: OpenAIChatTransformOptions,
 ): void {
   const content = msg.content
 
@@ -116,22 +134,35 @@ function convertMessage(
   }
 
   if (msg.role === 'user') {
-    convertUserMessage(content, output)
+    convertUserMessage(content, output, options.imageContentMode ?? 'vision')
   } else {
     convertAssistantMessage(content, output, options)
   }
 }
 
-function convertUserMessage(blocks: AnthropicContentBlock[], output: OpenAIChatMessage[]): void {
+function convertUserMessage(
+  blocks: AnthropicContentBlock[],
+  output: OpenAIChatMessage[],
+  imageContentMode: OpenAIChatImageContentMode,
+): void {
   // Separate tool_result blocks from other content
   const contentParts: OpenAIChatContentPart[] = []
+  const textOnlyParts: string[] = []
 
   for (const block of blocks) {
     if (block.type === 'text') {
-      contentParts.push({ type: 'text', text: block.text })
+      if (imageContentMode === 'text_only') {
+        textOnlyParts.push(block.text)
+      } else {
+        contentParts.push({ type: 'text', text: block.text })
+      }
     } else if (block.type === 'image') {
-      const url = `data:${block.source.media_type};base64,${block.source.data}`
-      contentParts.push({ type: 'image_url', image_url: { url } })
+      if (imageContentMode === 'text_only') {
+        textOnlyParts.push(OMITTED_IMAGE_TEXT)
+      } else {
+        const url = `data:${block.source.media_type};base64,${block.source.data}`
+        contentParts.push({ type: 'image_url', image_url: { url } })
+      }
     } else if (block.type === 'tool_result') {
       // tool_result → separate tool message
       const resultContent = typeof block.content === 'string'
@@ -147,7 +178,15 @@ function convertUserMessage(blocks: AnthropicContentBlock[], output: OpenAIChatM
     }
   }
 
-  if (contentParts.length > 0) {
+  if (imageContentMode === 'text_only') {
+    const content = textOnlyParts.filter(Boolean).join('\n')
+    if (content) {
+      output.push({
+        role: 'user',
+        content,
+      })
+    }
+  } else if (contentParts.length > 0) {
     output.push({
       role: 'user',
       content: contentParts.length === 1 && contentParts[0].type === 'text'
