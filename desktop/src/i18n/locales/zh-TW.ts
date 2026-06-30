@@ -1,6 +1,7 @@
-import type { TranslationKey } from './en'
+import { en, type TranslationKey } from './en'
 
 export const zh: Record<TranslationKey, string> = {
+  ...en,
   // ─── Common ──────────────────────────────────────
   'common.cancel': '取消',
   'common.save': '儲存',

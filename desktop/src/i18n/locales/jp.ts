@@ -1,6 +1,7 @@
-import type { TranslationKey } from './en'
+import { en, type TranslationKey } from './en'
 
 export const jp: Record<TranslationKey, string> = {
+  ...en,
   // ─── Common ──────────────────────────────────────
   'common.cancel': 'キャンセル',
   'common.save': '保存',

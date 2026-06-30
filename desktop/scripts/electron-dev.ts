@@ -1,3 +1,6 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 export const DEFAULT_RENDERER_URL = 'http://localhost:1420'
 export const LOCAL_NO_PROXY_ENTRIES = ['localhost', '127.0.0.1', '::1']
 
@@ -15,12 +18,15 @@ export function mergeNoProxy(existing: string | undefined, required = LOCAL_NO_P
 export function createElectronDevEnv(env: NodeJS.ProcessEnv = process.env) {
   const rendererUrl = env.ELECTRON_RENDERER_URL ?? DEFAULT_RENDERER_URL
   const noProxy = mergeNoProxy(env.NO_PROXY ?? env.no_proxy)
-  return {
+  const nextEnv = {
     ...env,
     ELECTRON_RENDERER_URL: rendererUrl,
     NO_PROXY: noProxy,
     no_proxy: noProxy,
   }
+  delete nextEnv.ELECTRON_RUN_AS_NODE
+  delete nextEnv.ELECTRON_FORCE_IS_PACKAGED
+  return nextEnv
 }
 
 async function waitForRenderer(rendererUrl: string) {
@@ -37,35 +43,52 @@ async function waitForRenderer(rendererUrl: string) {
 }
 
 async function main() {
-  const desktopRoot = new URL('..', import.meta.url).pathname
+  const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
   const childEnv = createElectronDevEnv()
   const rendererUrl = childEnv.ELECTRON_RENDERER_URL
   process.env.NO_PROXY = childEnv.NO_PROXY
   process.env.no_proxy = childEnv.no_proxy
 
-  const vite = Bun.spawn(['bun', 'run', 'dev'], {
+  const bunExecutable = process.execPath.replace(/\\/g, '/')
+  const vite = Bun.spawn([bunExecutable, 'run', 'dev'], {
     cwd: desktopRoot,
     env: childEnv,
     stdout: 'inherit',
     stderr: 'inherit',
   })
+  let electron: ReturnType<typeof Bun.spawn> | null = null
 
-  function stopVite() {
-    vite.kill()
+  function stopProcessTree(child: ReturnType<typeof Bun.spawn> | null) {
+    if (!child) return
+    if (process.platform === 'win32') {
+      Bun.spawnSync(['taskkill', '/PID', String(child.pid), '/T', '/F'], {
+        stdout: 'ignore',
+        stderr: 'ignore',
+      })
+      return
+    }
+    child.kill()
+  }
+
+  function stopChildren() {
+    stopProcessTree(electron)
+    stopProcessTree(vite)
   }
 
   process.on('SIGINT', () => {
-    stopVite()
+    stopChildren()
     process.exit(130)
   })
   process.on('SIGTERM', () => {
-    stopVite()
+    stopChildren()
     process.exit(143)
   })
+  process.on('exit', stopChildren)
 
   await waitForRenderer(rendererUrl)
 
-  const electron = Bun.spawn(['bunx', 'electron', './electron-dist/main.cjs'], {
+  const electronExecutable = path.join(desktopRoot, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron')
+  electron = Bun.spawn([electronExecutable, './electron-dist/main.cjs'], {
     cwd: desktopRoot,
     env: childEnv,
     stdout: 'inherit',
@@ -73,7 +96,7 @@ async function main() {
   })
 
   const exitCode = await electron.exited
-  stopVite()
+  stopChildren()
   process.exit(exitCode)
 }
 
