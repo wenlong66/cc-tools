@@ -1,12 +1,12 @@
 # CC-Tools Desktop
 
-基于 Tauri 2 + React 的桌面客户端。
+基于 Electron + React 的桌面客户端。
 
 ## 开发
 
 ```bash
 bun install
-bun run tauri dev
+bun run electron:dev
 ```
 
 ## 构建
@@ -15,8 +15,11 @@ bun run tauri dev
 # macOS (Apple Silicon)
 ./scripts/build-macos-arm64.sh
 
-# Windows (x64, MSI only)
+# Windows (x64, installer)
 .\scripts\build-windows-x64.ps1
+
+# Windows (x64, portable)
+.\scripts\build-windows-x64-portable.ps1
 ```
 
 构建产物位于 `build-artifacts/` 目录，文件名会显式包含平台、架构和包类型。

@@ -1,8 +1,13 @@
 [CmdletBinding()]
 param(
   [Parameter(ValueFromRemainingArguments = $true)]
-  [string[]]$TauriArgs
+  [string[]]$BuilderArgs
 )
+
+# Environment:
+#   SKIP_INSTALL=1        Skip root/desktop dependency installation.
+#   REBUILD_NATIVE=1      Rebuild Electron native dependencies before packaging.
+#   OPEN_OUTPUT=1         Open the portable output directory after a successful build.
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -13,9 +18,9 @@ $repoRoot = (Resolve-Path (Join-Path $desktopDir '..')).Path
 
 $targetTriple = 'x86_64-pc-windows-msvc'
 $portableDirName = '.cc-tools'
-$tauriTargetDir = Join-Path $desktopDir 'src-tauri\target'
-$releaseDir = Join-Path $tauriTargetDir "$targetTriple\release"
 $canonicalOutputDir = Join-Path $desktopDir 'build-artifacts\windows-x64-portable'
+$electronOutputDir = Join-Path $desktopDir 'build-artifacts\electron'
+$winUnpackedDir = Join-Path $electronOutputDir 'win-unpacked'
 
 function Write-Step {
   param([string]$Message)
@@ -30,7 +35,6 @@ function Assert-WindowsHost {
 
 function Assert-Command {
   param([string]$Name)
-
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     throw "[build-windows-x64-portable] Missing required command: $Name"
   }
@@ -58,7 +62,6 @@ function Import-VsDevEnvironment {
   }
 
   Write-Step "Importing MSVC environment from $vsDevCmd"
-
   $env:VSCMD_SKIP_SENDTELEMETRY = '1'
   $envDump = & cmd.exe /d /s /c "`"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && set"
   if ($LASTEXITCODE -ne 0) {
@@ -72,35 +75,12 @@ function Import-VsDevEnvironment {
   }
 }
 
-function Get-RustCargoBinDir {
-  return Join-Path $env:USERPROFILE '.cargo\bin'
-}
-
-function Ensure-RustInPath {
-  $cargoBinDir = Get-RustCargoBinDir
-  if ((Test-Path $cargoBinDir) -and -not (($env:Path -split ';') -contains $cargoBinDir)) {
-    $env:Path = "$cargoBinDir;$env:Path"
+function Clear-Directory {
+  param([string]$Path)
+  if (Test-Path $Path) {
+    Remove-Item -LiteralPath $Path -Recurse -Force
   }
-}
-
-function Resolve-OutputDirectory {
-  param([string]$PreferredPath)
-
-  New-Item -ItemType Directory -Force -Path $PreferredPath | Out-Null
-
-  $existingArtifacts = Get-ChildItem -Path $PreferredPath -Force -ErrorAction SilentlyContinue
-  foreach ($artifact in $existingArtifacts) {
-    try {
-      Remove-Item -LiteralPath $artifact.FullName -Force -Recurse
-    } catch {
-      $fallbackPath = "$PreferredPath-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-      Write-Step "Could not clear locked artifact '$($artifact.FullName)'. Using fallback output directory: $fallbackPath"
-      New-Item -ItemType Directory -Force -Path $fallbackPath | Out-Null
-      return $fallbackPath
-    }
-  }
-
-  return $PreferredPath
+  New-Item -ItemType Directory -Force -Path $Path | Out-Null
 }
 
 function Invoke-BunInstall {
@@ -123,12 +103,7 @@ function Invoke-BunInstall {
 
 Assert-WindowsHost
 Assert-Command bun
-
-Ensure-RustInPath
 Import-VsDevEnvironment
-
-Assert-Command cargo
-Assert-Command rustc
 
 if ($env:SKIP_INSTALL -ne '1') {
   Invoke-BunInstall -WorkingDirectory $repoRoot -Label 'repo root'
@@ -140,112 +115,71 @@ if ($env:SKIP_INSTALL -ne '1') {
   }
 }
 
-$env:TAURI_ENV_TARGET_TRIPLE = $targetTriple
+Write-Step 'Cleaning stale Electron outputs...'
+Remove-Item -LiteralPath (Join-Path $desktopDir 'dist') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $desktopDir 'electron-dist') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $electronOutputDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $desktopDir 'src-tauri\binaries\claude-sidecar-*') -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $desktopDir 'tsconfig.tsbuildinfo') -Force -ErrorAction SilentlyContinue
 
-$mainExe = Join-Path $releaseDir 'claude-code-desktop.exe'
-$compiledSidecarSource = Join-Path $desktopDir "src-tauri\binaries\claude-sidecar-$targetTriple.exe"
-$releaseSidecarSource = Join-Path $releaseDir 'claude-sidecar.exe'
-$distSource = Join-Path $desktopDir 'dist'
-
-Write-Step 'Building desktop frontend...'
 Push-Location $desktopDir
 try {
-  & bun run build
-  if ($LASTEXITCODE -ne 0) {
-    throw "[build-windows-x64-portable] bun run build failed (exit $LASTEXITCODE)"
-  }
+  $env:SIDECAR_TARGET_TRIPLE = $targetTriple
 
-  Write-Step 'Building desktop sidecars...'
+  Write-Step "Building sidecars for $targetTriple..."
   & bun run build:sidecars
   if ($LASTEXITCODE -ne 0) {
-    $sidecarBuildExitCode = $LASTEXITCODE
-    if (Test-Path $compiledSidecarSource) {
-      Write-Step "bun run build:sidecars failed (exit $sidecarBuildExitCode). Reusing existing sidecar: $compiledSidecarSource"
-    } elseif (Test-Path $releaseSidecarSource) {
-      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $compiledSidecarSource) | Out-Null
-      Copy-Item -LiteralPath $releaseSidecarSource -Destination $compiledSidecarSource -Force
-      Write-Step "bun run build:sidecars failed (exit $sidecarBuildExitCode). Reused release sidecar fallback: $releaseSidecarSource"
-    } else {
-      throw "[build-windows-x64-portable] bun run build:sidecars failed (exit $sidecarBuildExitCode) and no reusable sidecar binary was found"
-    }
-  }
-} finally {
-  Pop-Location
-}
-
-Write-Step "Building Windows portable desktop app for $targetTriple"
-$tempConfigPath = Join-Path ([System.IO.Path]::GetTempPath()) 'cc-tools.tauri.local.windows-portable.json'
-$tempConfig = @{
-  build = @{
-    beforeBuildCommand = 'ver >nul'
-  }
-  bundle = @{
-    createUpdaterArtifacts = $false
-  }
-} | ConvertTo-Json -Depth 10
-Set-Content -Path $tempConfigPath -Value $tempConfig -Encoding UTF8
-
-Push-Location $desktopDir
-try {
-  if (-not $env:CARGO_BUILD_JOBS) {
-    $env:CARGO_BUILD_JOBS = '1'
-    Write-Step 'CARGO_BUILD_JOBS not set. Using 1 job to reduce Windows page file pressure during tauri build'
+    throw "[build-windows-x64-portable] build:sidecars failed (exit $LASTEXITCODE)"
   }
 
-  $tauriBuildArgs = @(
-    'tauri',
-    'build',
-    '--target',
-    $targetTriple,
-    '--no-bundle',
-    '--ci',
-    '--config',
-    $tempConfigPath
-  )
-
-  if ($null -ne $TauriArgs) {
-    $remainingArgs = @($TauriArgs)
-    if ($remainingArgs.Count -gt 0) {
-      $tauriBuildArgs += $remainingArgs
-    }
-  }
-
-  & bun run @tauriBuildArgs
+  Write-Step 'Building renderer and Electron main/preload bundles...'
+  & bun run build
   if ($LASTEXITCODE -ne 0) {
-    throw "[build-windows-x64-portable] tauri build failed (exit $LASTEXITCODE)"
+    throw "[build-windows-x64-portable] renderer build failed (exit $LASTEXITCODE)"
+  }
+  & bun run build:electron
+  if ($LASTEXITCODE -ne 0) {
+    throw "[build-windows-x64-portable] Electron build failed (exit $LASTEXITCODE)"
+  }
+
+  if ($env:REBUILD_NATIVE -eq '1') {
+    Write-Step 'Rebuilding native dependencies for Electron ABI...'
+    & bun x electron-builder install-app-deps
+    if ($LASTEXITCODE -ne 0) {
+      throw "[build-windows-x64-portable] electron-builder install-app-deps failed (exit $LASTEXITCODE)"
+    }
+    & bun run prepare:node-pty
+    if ($LASTEXITCODE -ne 0) {
+      throw "[build-windows-x64-portable] prepare:node-pty failed (exit $LASTEXITCODE)"
+    }
+  }
+
+  $args = @('electron-builder', '--win', 'dir', '--x64', '--publish', 'never')
+  $remainingArgs = @($BuilderArgs)
+  if ($remainingArgs.Count -gt 0) {
+    $args += $remainingArgs
+  }
+
+  Write-Step 'Packaging Electron portable app directory...'
+  & bun x @args
+  if ($LASTEXITCODE -ne 0) {
+    throw "[build-windows-x64-portable] electron-builder dir package failed (exit $LASTEXITCODE)"
   }
 } finally {
   Pop-Location
-  if (Test-Path $tempConfigPath) {
-    Remove-Item -LiteralPath $tempConfigPath -Force
-  }
 }
 
-$sidecarSource = if (Test-Path $releaseSidecarSource) {
-  $releaseSidecarSource
-} else {
-  $compiledSidecarSource
+if (-not (Test-Path (Join-Path $winUnpackedDir 'CC-Tools.exe'))) {
+  throw "[build-windows-x64-portable] Missing Electron win-unpacked executable: $(Join-Path $winUnpackedDir 'CC-Tools.exe')"
 }
 
-if (-not (Test-Path $mainExe)) {
-  throw "[build-windows-x64-portable] Missing portable app executable: $mainExe"
-}
-if (-not (Test-Path $sidecarSource)) {
-  throw "[build-windows-x64-portable] Missing sidecar executable: $sidecarSource"
-}
-if (-not (Test-Path (Join-Path $distSource 'index.html'))) {
-  throw "[build-windows-x64-portable] Missing built frontend assets under $distSource"
-}
+Clear-Directory -Path $canonicalOutputDir
+Get-ChildItem -LiteralPath $winUnpackedDir -Force |
+  ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $canonicalOutputDir -Recurse -Force }
 
-$activeOutputDir = Resolve-OutputDirectory -PreferredPath $canonicalOutputDir
-$portableConfigDir = Join-Path $activeOutputDir $portableDirName
+$portableConfigDir = Join-Path $canonicalOutputDir $portableDirName
 $portableCacheDir = Join-Path $portableConfigDir 'Cache'
 $portableWebViewDir = Join-Path $portableConfigDir 'EBWebView'
-
-Copy-Item -LiteralPath $mainExe -Destination (Join-Path $activeOutputDir 'claude-code-desktop.exe') -Force
-Copy-Item -LiteralPath $sidecarSource -Destination (Join-Path $activeOutputDir 'claude-sidecar.exe') -Force
-Copy-Item -LiteralPath $distSource -Destination (Join-Path $activeOutputDir 'dist') -Force -Recurse
-
 New-Item -ItemType Directory -Force -Path $portableConfigDir | Out-Null
 New-Item -ItemType Directory -Force -Path $portableCacheDir | Out-Null
 New-Item -ItemType Directory -Force -Path $portableWebViewDir | Out-Null
@@ -260,13 +194,15 @@ $launchScript = @'
 setlocal
 cd /d "%~dp0" || exit /b 1
 set "CLAUDE_CONFIG_DIR=%~dp0.cc-tools"
+set "CC_HAHA_APP_PORTABLE_DIR=1"
 set "CC_TOOLS_APP_PORTABLE_DIR=1"
-"%~dp0claude-code-desktop.exe" %*
+set "WEBVIEW2_USER_DATA_FOLDER=%~dp0.cc-tools\EBWebView"
+"%~dp0CC-Tools.exe" %*
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" pause
 exit /b %EXIT_CODE%
 '@
-Set-Content -Path (Join-Path $activeOutputDir 'launch-cc-tools-portable.cmd') -Value $launchScript -Encoding ASCII
+Set-Content -Path (Join-Path $canonicalOutputDir 'launch-cc-tools-portable.cmd') -Value $launchScript -Encoding ASCII
 
 $portableReadme = @'
 CC-Tools Portable (Windows x64)
@@ -274,41 +210,40 @@ CC-Tools Portable (Windows x64)
 
 Run:
 - preferred: double-click launch-cc-tools-portable.cmd
-- fallback: run claude-code-desktop.exe directly
+- fallback: run CC-Tools.exe directly
 
 Directory layout:
-- claude-code-desktop.exe : desktop app executable
-- claude-sidecar.exe      : required Bun sidecar runtime
-- dist/                   : bundled H5 assets used by the local desktop server
-- .cc-tools/              : portable config, cache, WebView2 data, projects, skills
+- CC-Tools.exe : Electron desktop app executable
+- resources/   : bundled app, sidecar runtime, and native dependencies
+- .cc-tools/   : portable config, cache, WebView2 data, projects, skills
 
 Notes:
 - The launcher sets CLAUDE_CONFIG_DIR=%~dp0.cc-tools so the portable data directory stays beside the app.
+- The launcher sets WEBVIEW2_USER_DATA_FOLDER=%~dp0.cc-tools\EBWebView so WebView2 state stays portable.
 - Without the launcher, the app falls back to its built-in default portable directory detection.
 - If you move the whole folder to another machine, bring the full folder, not only the exe.
 - WebView2 runtime still needs to be available on the host Windows system.
 '@
-Set-Content -Path (Join-Path $activeOutputDir 'PORTABLE_README.txt') -Value $portableReadme -Encoding UTF8
+Set-Content -Path (Join-Path $canonicalOutputDir 'PORTABLE_README.txt') -Value $portableReadme -Encoding UTF8
 
 $buildInfo = @(
-  'Artifact type: Windows portable export'
-  'Build mode: tauri build --no-bundle'
+  'Artifact type: Windows Electron portable directory'
+  'Build mode: electron-builder --win dir --x64 --publish never'
   "Target triple: $targetTriple"
-  "Portable output: $activeOutputDir"
-  "App executable: $(Join-Path $activeOutputDir 'claude-code-desktop.exe')"
-  "Sidecar executable: $(Join-Path $activeOutputDir 'claude-sidecar.exe')"
-  "Frontend assets: $(Join-Path $activeOutputDir 'dist')"
+  "Builder output: $electronOutputDir"
+  "Portable output: $canonicalOutputDir"
+  "App executable: $(Join-Path $canonicalOutputDir 'CC-Tools.exe')"
   "Portable config dir: $portableConfigDir"
   "Built at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
 )
-Set-Content -Path (Join-Path $activeOutputDir 'BUILD_INFO.txt') -Value $buildInfo -Encoding UTF8
+Set-Content -Path (Join-Path $canonicalOutputDir 'BUILD_INFO.txt') -Value $buildInfo -Encoding UTF8
 
 Write-Host ''
 Write-Step 'Portable build finished.'
-Write-Step "Portable output: $activeOutputDir"
-Write-Step "Launch script: $(Join-Path $activeOutputDir 'launch-cc-tools-portable.cmd')"
-Write-Step "Executable: $(Join-Path $activeOutputDir 'claude-code-desktop.exe')"
+Write-Step "Portable output: $canonicalOutputDir"
+Write-Step "Launch script: $(Join-Path $canonicalOutputDir 'launch-cc-tools-portable.cmd')"
+Write-Step "Executable: $(Join-Path $canonicalOutputDir 'CC-Tools.exe')"
 
 if ($env:OPEN_OUTPUT -eq '1') {
-  Invoke-Item $activeOutputDir
+  Invoke-Item $canonicalOutputDir
 }

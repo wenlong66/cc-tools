@@ -83,7 +83,6 @@ function Clear-Directory {
 
 Assert-WindowsHost
 Assert-Command bun
-Assert-Command bunx
 Import-VsDevEnvironment
 
 if ($env:SKIP_INSTALL -ne '1') {
@@ -138,7 +137,7 @@ try {
 
   if ($env:REBUILD_NATIVE -eq '1') {
     Write-Step 'Rebuilding native dependencies for Electron ABI...'
-    & bunx electron-builder install-app-deps
+    & bun x electron-builder install-app-deps
     if ($LASTEXITCODE -ne 0) {
       throw "[build-windows-x64] electron-builder install-app-deps failed (exit $LASTEXITCODE)"
     }
@@ -155,7 +154,7 @@ try {
   }
 
   Write-Step 'Packaging Electron app...'
-  & bunx @args
+  & bun x @args
   if ($LASTEXITCODE -ne 0) {
     throw "[build-windows-x64] electron-builder failed (exit $LASTEXITCODE)"
   }

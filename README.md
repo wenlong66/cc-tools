@@ -78,7 +78,7 @@ cp .env.example .env
 build-windows-x64.cmd
 ```
 
-这个脚本会在仓库根目录检查 `bun`，然后进入 `desktop/` 调用现有的 Windows MSI 打包流程。需要传额外的 Tauri 参数时，也可以直接追加：
+这个脚本会在仓库根目录检查 `bun`，然后进入 `desktop/` 调用现有的 Windows Electron 安装包打包流程。需要传额外的 Electron Builder 参数时，也可以直接追加：
 
 ```cmd
 build-windows-x64.cmd --debug
@@ -90,9 +90,9 @@ build-windows-x64.cmd --debug
 build-windows-x64-portable.cmd
 ```
 
-这个脚本会在仓库根目录检查 `bun`，然后进入 `desktop/` 显式构建前端和 sidecar，再通过 `tauri build --no-bundle` 生成适合整理成绿色版目录的 Windows 产物。
+这个脚本会在仓库根目录检查 `bun`，然后进入 `desktop/` 显式构建 sidecar、前端和 Electron 主进程，再通过 `electron-builder --win dir --x64 --publish never` 生成适合整目录复制的 Windows 绿色版产物。
 
-需要传额外的 Tauri / Cargo runner 参数时，也可以直接追加：
+需要传额外的 Electron Builder 参数时，也可以直接追加：
 
 ```cmd
 build-windows-x64-portable.cmd -- --locked
@@ -104,12 +104,14 @@ build-windows-x64-portable.cmd -- --locked
 
 也可以直接运行：
 
-- `desktop/build-artifacts/windows-x64-portable/claude-code-desktop.exe`
+- `desktop/build-artifacts/windows-x64-portable/CC-Tools.exe`
 
 其中启动脚本会显式设置：
 
 - `CLAUDE_CONFIG_DIR=%~dp0.cc-tools`
+- `CC_HAHA_APP_PORTABLE_DIR=1`
 - `CC_TOOLS_APP_PORTABLE_DIR=1`
+- `WEBVIEW2_USER_DATA_FOLDER=%~dp0.cc-tools\EBWebView`
 
 启动脚本会把真实 portable 数据目录固定到 exe 同级的 `.cc-tools/`。不通过启动脚本直接运行 exe 时，则会回到应用内置的默认 portable 目录判定逻辑。
 
@@ -121,21 +123,18 @@ build-windows-x64-portable.cmd -- --locked
   - `BUILD_INFO.txt` 会记录版本号、目标架构、实际输出目录和 MSI 来源，方便回查。
 - `desktop/build-artifacts/windows-x64-portable/`
   - Windows 绿色版输出目录。
-  - 目录内会包含 `claude-code-desktop.exe`、`claude-sidecar.exe`、`dist/`、`.cc-tools/`、`PORTABLE_README.txt` 和 `BUILD_INFO.txt`。
+  - 目录内会包含 `CC-Tools.exe`、Electron runtime 文件、`resources/`、`.cc-tools/`、`launch-cc-tools-portable.cmd`、`PORTABLE_README.txt` 和 `BUILD_INFO.txt`。
   - 启动脚本会把 `CLAUDE_CONFIG_DIR` 指到这个目录下的 `.cc-tools/`，让配置、缓存和 WebView2 数据都跟随应用一起移动。
   - 这是适合整目录拷贝和直接运行的产物；移动时请保留整个目录，不要只拷单个 exe。
-- `desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/`
-  - Tauri / WiX 原始 bundle 输出目录。
-  - 适合排查 MSI 生成问题，或对比脚本收集前后的原始产物。
-- `desktop/src-tauri/target/x86_64-pc-windows-msvc/release/`
-  - Tauri `--no-bundle` / release 原始编译目录。
-  - 这里能看到桌面端主程序、sidecar 和构建期生成的原始可执行文件，但它不是脚本整理后的最终分发目录。
+- `desktop/build-artifacts/electron/win-unpacked/`
+  - Electron Builder 原始目录包输出。
+  - Windows 安装包和绿色版都会复用该目录结构；绿色版脚本会复制并补 `.cc-tools/` 和启动脚本。
 - `desktop/dist/`
   - 前端构建产物目录。
   - 这里是 React + Vite 打出来的静态资源，属于桌面端打包前置产物，不是最终安装包。
 - `desktop/src-tauri/binaries/`
   - 桌面端 sidecar 二进制目录。
-  - `build:sidecars` 会先更新这里的可执行文件；绿色版导出也会从这里取 sidecar 并整理到最终 portable 目录。
+  - `build:sidecars` 会先更新这里的可执行文件；Electron Builder 会把它打入 `resources/app.asar.unpacked/`，绿色版直接复用 `win-unpacked` 目录。
 
 ---
 
