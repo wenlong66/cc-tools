@@ -9,7 +9,7 @@ export type ProviderAuthStrategy =
   | 'dual_same_token'
   | 'dual_dummy'
 
-export type ProviderRuntimeKind = 'anthropic_compatible' | 'openai_oauth'
+export type ProviderRuntimeKind = 'anthropic_compatible' | 'openai_oauth' | 'grok_oauth'
 
 export type ModelMapping = {
   main: string
@@ -41,6 +41,7 @@ export type SavedProvider = {
   autoCompactWindow?: number
   modelContextWindows?: ModelContextWindows
   toolSearchEnabled?: boolean
+  disableExperimentalBetas?: boolean
   notes?: string
 }
 
@@ -57,6 +58,7 @@ export type CreateProviderInput = {
   autoCompactWindow?: number
   modelContextWindows?: ModelContextWindows
   toolSearchEnabled?: boolean
+  disableExperimentalBetas?: boolean
   notes?: string
 }
 
@@ -72,6 +74,7 @@ export type UpdateProviderInput = {
   autoCompactWindow?: number | null
   modelContextWindows?: ModelContextWindows | null
   toolSearchEnabled?: boolean
+  disableExperimentalBetas?: boolean
   notes?: string
 }
 
